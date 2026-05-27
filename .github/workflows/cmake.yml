@@ -31,7 +31,7 @@ jobs:
       CC: ${{ matrix.c }}
       CXX: ${{ matrix.cxx }}
       BUILD_TYPE: ${{ github.event.inputs.build_type || 'Debug' }}
-      EXECUTABLE_NAME: "oop"
+      EXECUTABLE_NAME: "CRender"
       INPUT_FILENAME: "tastatura.txt"
       BUILD_DIR: "build"
 
@@ -82,6 +82,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build valgrind cppcheck jq \
                                  libc++-18-dev libc++abi-18-dev
+          #\libgl1-mesa-dev libglu1-mesa-dev xorg-dev xvfb libwayland-dev libxkbcommon-dev wayland-protocols libwayland-bin
+          
+          # See Linux OpenGL & GLFW dependencies
+          # https://medium.com/geekculture/a-beginners-guide-to-setup-opengl-in-linux-debian-2bfe02ccd1e
+
+          # For Debian based distributions
+
+          # OpenGL
+          sudo apt-get install cmake pkg-config
+          sudo apt-get install mesa-utils libglu1-mesa-dev freeglut3-dev mesa-common-dev
+          sudo apt-get install libglew-dev libglfw3-dev libglm-dev
+          sudo apt-get install libao-dev libmpg123-dev
+
+          #wayland-scanner
+          sudo apt install libwayland-bin libwayland-dev
+          #install for cmake (if not installed already on this system)
+          sudo apt install -y  libxi-dev libxrandr-dev libxinerama-dev \
+                                libxcursor-dev libxcomposite-dev libxkbcommon-dev
+          #X Virtual Framebuffer for Github Actions enviroment
+          sudo apt install -y xvfb libgl1-mesa-dri
+
+          # GLFW
+          cd /usr/local/lib/
+          sudo git clone https://github.com/glfw/glfw.git
+          cd glfw
+          sudo cmake .
+          sudo make
+          sudo make install
 
       - name: Build & Install
         run: |
@@ -96,15 +124,24 @@ jobs:
 
       - name: Memory Check (Valgrind on GCC)
         # Only run Valgrind if we are on Linux and using G++ (no ASan conflict)
+        # Run through XVFB to be able to render on a screen (create window)
+
+        # Some memory leaks might happen due to the Virtual Framebuffer or the driver
+        # While testing, I found similar leaks to https://github.com/glfw/glfw/issues/1195
         if: runner.os == 'Linux' && startsWith(matrix.cxx, 'g++')
         run: |
-          valgrind --leak-check=full --error-exitcode=1 ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
+          export LIBGL_ALWAYS_SOFTWARE=1
+          xvfb-run -a timeout --preserve-status 60s valgrind --leak-check=full \
+                                                         --suppressions=valgrind_external_libs.supp \
+                                                           --error-exitcode=1 ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
 
       - name: Memory Check (ASan on Clang)
         # Only run the binary directly if using Clang (ASan is compiled in)
         if: runner.os == 'Linux' && startsWith(matrix.cxx, 'clang++')
+        # Run through XVFB to be able to render on a screen (create window)
         run: |
-          ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
+          export LIBGL_ALWAYS_SOFTWARE=1
+          xvfb-run -a timeout --preserve-status 60s ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
 
       - name: Static Analysis (Cppcheck)
         if: runner.os == 'Linux'

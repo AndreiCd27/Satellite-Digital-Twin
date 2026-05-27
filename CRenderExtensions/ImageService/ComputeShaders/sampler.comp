@@ -1,0 +1,39 @@
+#version 430 core
+
+// Evaluate area of 16x16 pixels on each thread
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// Source Texture
+uniform sampler2D SrcTex;
+
+// Destination Texure
+layout(rgba8, binding = 1) writeonly uniform image2D DstTex;
+
+// Img resolution
+uniform vec3 DstRes;
+
+// Flip switch
+uniform int flip;
+
+void main() {
+    ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+
+    if (coords.x >= int(DstRes.x) || coords.y >= int(DstRes.y)) {
+        return;
+    }
+
+    // Get Normalized img coordinates
+    float u = (float(coords.x) + 0.5) / DstRes.x;
+    // OpenGL flips the texture vertically, so we have to fix it
+    float v = (float(coords.y) + 0.5) / DstRes.y;
+    vec2 uv = vec2(u, v);
+
+    vec4 s = texture(SrcTex, uv);
+
+    ivec2 tCoords = coords;
+    if (flip == 1) {
+        tCoords.y = int(DstRes.y) - 1 - coords.y;
+    }
+
+    imageStore(DstTex, tCoords, s);
+}

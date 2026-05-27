@@ -16,6 +16,7 @@ void EBO::Setup(const GLuint* PTR, GLsizeiptr size, const int drawStyle) {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, PTR, drawStyle);
 	Capacity = size;
 	//std::cout << "Setup EBO complete!!!!\n";
+	SetupComplete = true;
 }
 
 void EBO::Bind() {

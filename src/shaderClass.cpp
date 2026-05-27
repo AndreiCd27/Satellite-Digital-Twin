@@ -24,6 +24,45 @@ std::string get_file_contents(const char* filename)
 	return "";
 }
 
+
+// Activates the Shader Program
+void AbstractShader::Activate()
+{
+	glUseProgram(ID);
+}
+
+// Deletes the Shader Program
+void AbstractShader::Delete()
+{
+	glDeleteProgram(ID);
+}
+
+void AbstractShader::compileErrors(unsigned int shader, const char* type)
+{
+	// Stores status of compilation
+	GLint hasCompiled;
+	// Character array to store error message in
+	char infoLog[1024];
+	if (strcmp(type, "PROGRAM") != 0)
+	{
+		glGetShaderiv(shader, GL_COMPILE_STATUS, &hasCompiled);
+		if (hasCompiled == GL_FALSE)
+		{
+			glGetShaderInfoLog(shader, 1024, NULL, infoLog);
+			std::cout << "SHADER_COMPILATION_ERROR for:" << type << "\n" << infoLog << std::endl;
+		}
+	}
+	else
+	{
+		glGetProgramiv(shader, GL_LINK_STATUS, &hasCompiled);
+		if (hasCompiled == GL_FALSE)
+		{
+			glGetProgramInfoLog(shader, 1024, NULL, infoLog);
+			std::cout << "SHADER_LINKING_ERROR for:" << type << "\n" << infoLog << std::endl;
+		}
+	}
+}
+
 // Constructor that build the Shader Program from 2 different shaders
 void Shader::Setup(const char* vertexFile, const char* fragmentFile)
 {
@@ -71,59 +110,43 @@ void Shader::Setup(const char* vertexFile, const char* fragmentFile)
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
 
+	SetupComplete = true;
+
 }
 
-// Activates the Shader Program
-void Shader::Activate()
-{
-	glUseProgram(ID);
-}
-
-// Deletes the Shader Program
-void Shader::Delete()
-{
-	glDeleteProgram(ID);
-}
-
-void Shader::compileErrors(unsigned int shader, const char* type)
-{
-	// Stores status of compilation
-	GLint hasCompiled;
-	// Character array to store error message in
-	char infoLog[1024];
-	if (strcmp(type, "PROGRAM")!=0)
-	{
-		glGetShaderiv(shader, GL_COMPILE_STATUS, &hasCompiled);
-		if (hasCompiled == GL_FALSE)
-		{
-			glGetShaderInfoLog(shader, 1024, NULL, infoLog);
-			std::cout << "SHADER_COMPILATION_ERROR for:" << type << "\n" << infoLog << std::endl;
-		}
+GLuint AbstractShader::GetUniformLocation(const std::string& uniformName) {
+	if (uniforms.find(uniformName) == uniforms.end()) {
+		uniforms.try_emplace(uniformName, glGetUniformLocation(ID, uniformName.c_str()));
 	}
-	else
-	{
-		glGetProgramiv(shader, GL_LINK_STATUS, &hasCompiled);
-		if (hasCompiled == GL_FALSE)
-		{
-			glGetProgramInfoLog(shader, 1024, NULL, infoLog);
-			std::cout << "SHADER_LINKING_ERROR for:" << type << "\n" << infoLog << std::endl;
-		}
-	}
+	return uniforms[uniformName];
 }
 
-const GLuint Shader::GetUniformLocation(const std::string& uniformName) {
-	if (UNIFORM_LOCATIONS.find(uniformName) == UNIFORM_LOCATIONS.end()) {
-		UNIFORM_LOCATIONS[uniformName] = glGetUniformLocation(ID, uniformName.c_str());
-	}
-	return UNIFORM_LOCATIONS[uniformName];
-}
-
-void Shader::SetUniformMatrix4by4(const std::string& uniformName, glm::mat4 Mat4) {
+void AbstractShader::SetUniformMatrix4by4(const std::string& uniformName, glm::mat4 Mat4) {
 	glUniformMatrix4fv(GetUniformLocation(uniformName), 1, GL_FALSE, glm::value_ptr(Mat4));
 }
-void Shader::SetUniformVector3(const std::string& uniformName, glm::vec3 Vec3) {
+void AbstractShader::SetUniformVector3(const std::string& uniformName, glm::vec3 Vec3) {
 	glUniform3f(GetUniformLocation(uniformName), Vec3.x, Vec3.y, Vec3.z);
 }
-void Shader::SetUniformVector3(const std::string& uniformName, AVector3 Vec3) {
+void AbstractShader::SetUniformVector3(const std::string& uniformName, AVector3 Vec3) {
 	glUniform3f(GetUniformLocation(uniformName), Vec3.x, Vec3.y, Vec3.z);
+}
+void AbstractShader::SetUniformVector2(const std::string& uniformName, float x, float y) {
+	glUniform2f(GetUniformLocation(uniformName), x, y);
+}
+void AbstractShader::SetUniformVector3_int(const std::string& uniformName, glm::ivec3 Vec3) {
+	glUniform3i(GetUniformLocation(uniformName), Vec3.x, Vec3.y, Vec3.z);
+}
+
+void AbstractShader::SetUniformVec4Array(const std::string& uniformName, std::vector<float> F) {
+	glUniform4fv(GetUniformLocation(uniformName), (GLsizei)(F.size() / 4), F.data());
+}
+void AbstractShader::SetUniformVec4Array(const std::string& uniformName, float* F, int Fsize) {
+	glUniform4fv(GetUniformLocation(uniformName), (GLsizei)Fsize / 4, F);
+}
+
+void AbstractShader::SetInt(const std::string& uniformName, int val) {
+	glUniform1i(GetUniformLocation(uniformName), val);
+}
+void AbstractShader::SetFloat(const std::string& uniformName, float val) {
+	glUniform1f(GetUniformLocation(uniformName), val);
 }

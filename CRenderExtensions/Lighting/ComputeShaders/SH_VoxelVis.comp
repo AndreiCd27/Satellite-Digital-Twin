@@ -1,0 +1,171 @@
+#version 430 core
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+struct Blocker {
+    vec4 pos_rad; // xyz = Pos, w = Radius
+    ivec4 instanceID;
+};
+
+layout(rgba32f, binding = 0) uniform writeonly image3D volumeData0;
+layout(rgba32f, binding = 1) uniform writeonly image3D volumeData1;
+layout(rgba32f, binding = 2) uniform writeonly image3D volumeData2;
+layout(rgba32f, binding = 3) uniform writeonly image3D volumeData3;
+
+layout(std430, binding = 4) readonly buffer BlockerBuffer {
+    uint sphereCount;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+    Blocker blockers[];
+};
+
+uniform isampler3D InstanceTex;
+uniform vec3 worldMin;
+uniform vec3 worldMax;
+uniform ivec3 gridRes;
+
+const vec4 SHNorm0 = vec4(0.282095, 0.488604, 0.488604, 0.488604);
+const vec4 SHNorm1 = vec4(1.092548, 1.092548, 0.315392, 1.092548);
+const vec4 SHNorm2 = vec4(0.546274, 0.590044, 2.890611, 0.457046);
+const vec4 SHNorm3 = vec4(0.373176, 0.457046, 1.4453055, 0.590044);
+
+const vec4 ZHconv = vec4(3.544907, 2.046653, 1.585331, 1.339857);
+const vec4 ZHnormalize = vec4(-28.93514, -14.46757, -7.23378, -3.61689);
+
+vec4 ComputeZHVis(const float cosA, const float sinA) {
+    float sin2 = sinA * sinA;
+    vec4 ZH = vec4(1.0f - cosA, sin2, cosA * sin2, (5.0f * cosA * cosA - 1.0f) * sin2);
+    ZH *= ZHnormalize;
+    ZH *= ZHconv;
+    return ZH;
+}
+
+void AccumulateLogSH(const vec3 P, const vec4 ZHcoeff, inout vec4 LogSH[4]) {
+    vec3 P2 = P * P;
+    vec3 Pc = P.xyz * P.yzx;
+
+    vec4 Comp0 = ZHcoeff.xyyy;
+    vec4 Comp1 = ZHcoeff.zzzz;
+    vec4 Comp2 = ZHcoeff.zwww;
+    vec4 Comp3 = ZHcoeff.wwww;
+
+    vec4 XYZ_0 = vec4(1.0, P.x, P.y, P.z);
+    vec4 AC_ambient = Comp0 * SHNorm0 * XYZ_0;
+    if (AC_ambient.x > 0.8) return;
+
+    LogSH[0] += AC_ambient;
+
+    vec4 XYZ_1 = vec4(Pc.z, Pc.x, 3.0 * P2.y - 1.0, Pc.y);
+    LogSH[1] += Comp1 * SHNorm1 * XYZ_1;
+
+    vec4 XYZ_2 = vec4(P2.x - P2.z, P.x * (P2.x - 3.0 * P2.z), Pc.x * P.z, P.x * (5.0 * P2.y - 1.0));
+    LogSH[2] += Comp2 * SHNorm2 * XYZ_2;
+
+    vec4 XYZ_3 = vec4(P.y * (5.0 * P2.y - 3.0), P.z * (5.0 * P2.y - 1.0), P.y * (P2.x - P2.z), P.z * (3.0 * P2.x - P2.z));
+    LogSH[3] += Comp3 * SHNorm3 * XYZ_3;
+}
+
+void ComputeSHEXP(inout vec4 LogSH[4]) {
+    float f0 = LogSH[0].x;
+    float g0 = exp(f0 * 0.282095);
+    LogSH[0].x = g0 * 3.544907; 
+    LogSH[0].yzw *= g0;
+    LogSH[1] *= g0;
+    LogSH[2] *= g0;
+    LogSH[3] *= g0;
+}
+
+void main() {
+    ivec3 voxelP = ivec3(gl_GlobalInvocationID);
+    if (voxelP.x >= gridRes.x || voxelP.y >= gridRes.y || voxelP.z >= gridRes.z) return;
+
+    uint safeSphereCount = min(sphereCount, 60000U);
+
+    vec3 pNorm;
+    pNorm.x = float(voxelP.x) / float(gridRes.x - 1);
+    pNorm.y = float(voxelP.y) / float(gridRes.y - 1);
+    pNorm.z = float(voxelP.z) / float(gridRes.z - 1);
+    
+    int currInsID = texelFetch(InstanceTex, voxelP, 0).r;
+    if (currInsID == -1) {
+        bool found = false;
+        for (int offX = -1; offX <= 1; offX+=2) {
+            for (int offY = -1; offY <= 1; offY+=2) {
+                for (int offZ = -1; offZ <= 1; offZ+=2) {
+                    ivec3 neighborPos = clamp(voxelP + ivec3(offX, offY, offZ), ivec3(0), gridRes - 1);
+                    int neighborID = texelFetch(InstanceTex, neighborPos, 0).r;
+                    if (neighborID >= 0) {
+                        currInsID = neighborID;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (found == false) {
+            // No ID found, break this thread
+            imageStore(volumeData0, voxelP, vec4(0.0));
+            imageStore(volumeData1, voxelP, vec4(0.0));
+            imageStore(volumeData2, voxelP, vec4(0.0));
+            imageStore(volumeData3, voxelP, vec4(0.0));
+            return;
+        }
+    }
+
+    vec4 voxelLogSH[4];
+    for(int i=0; i < 4; i++) voxelLogSH[i] = vec4(0.0);
+
+    // Scale correction for accurate distance in the discrete voxel grid
+    vec3 worldSize = worldMax - worldMin;
+    float maxDim = worldSize.x;
+    vec3 scaleSpace = worldSize / maxDim;
+
+    // Constant to discard any sphere that is too far / too small
+    // Works by analyzing the opening angle from the voxel point to the sphere (cone)
+    const float MIN_SIN = 0.01;
+
+    for (uint i = 0; i < safeSphereCount; i++) {
+        vec4 B = blockers[i].pos_rad; // xyz = Poz, w = Radius
+
+        // ID Filtering
+        if (currInsID >= 0 && blockers[i].instanceID.x == currInsID) {
+            continue; 
+        }
+
+        vec3 dP = (B.xyz - pNorm) * scaleSpace;
+        float d2 = dot(dP, dP);
+
+        float maxInfluenceDist = B.w * scaleSpace.x * 12.0; 
+        if (d2 > (maxInfluenceDist * maxInfluenceDist)) {
+            continue; 
+        }
+
+        float d = sqrt(d2);
+        if (d < 0.0001) continue;
+
+        float radiusWorld = B.w * scaleSpace.x * 0.75; 
+        
+        float D = max(d, radiusWorld * 1.01); 
+
+        float sinAlpha = clamp(radiusWorld / D, 0.0, 0.99);
+
+        if (sinAlpha < MIN_SIN) {
+            continue;
+        }
+
+        float cosAlpha = sqrt(1.0 - sinAlpha * sinAlpha);
+                
+        vec4 ZHcoeff = ComputeZHVis(cosAlpha, sinAlpha);
+        vec3 N = dP / d;
+
+        AccumulateLogSH(N, ZHcoeff, voxelLogSH);
+    }
+    
+    ComputeSHEXP(voxelLogSH);
+
+    imageStore(volumeData0, voxelP, voxelLogSH[0]);
+    imageStore(volumeData1, voxelP, voxelLogSH[1]);
+    imageStore(volumeData2, voxelP, voxelLogSH[2]);
+    imageStore(volumeData3, voxelP, voxelLogSH[3]);
+}

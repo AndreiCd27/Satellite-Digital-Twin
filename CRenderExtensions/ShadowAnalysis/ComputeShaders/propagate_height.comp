@@ -1,0 +1,40 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Original building mask
+layout(binding = 0, rgba8) uniform readonly image2D maskTex;
+
+// Heightmap
+layout(binding = 1, r8) uniform image2D heightMapTex;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(maskTex);
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    // Propagate height just inside buildings
+    float isBuilding = imageLoad(maskTex, pos).r;
+    if (isBuilding < 0.5) return;
+
+    float currentHeight = imageLoad(heightMapTex, pos).r;
+    if (currentHeight > 0.0) return;
+
+    float maxNeighborHeight = 0.0;
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            ivec2 neighborPos = pos + ivec2(dx, dy);
+            
+            if (neighborPos.x >= 0 && neighborPos.x < size.x && neighborPos.y >= 0 && neighborPos.y < size.y) {
+                float neighborHeight = imageLoad(heightMapTex, neighborPos).r;
+                if (neighborHeight > maxNeighborHeight) {
+                    maxNeighborHeight = neighborHeight;
+                }
+            }
+        }
+    }
+
+    if (maxNeighborHeight > 0.0) {
+        imageStore(heightMapTex, pos, vec4(maxNeighborHeight));
+    }
+}

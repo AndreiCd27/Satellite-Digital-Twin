@@ -10,6 +10,10 @@ Engine3D* Engine3D::GetEngine3D() {
 	return engine;
 }
 
+void Engine3D::setWindowTitle(const std::string& winTitle) {
+	glfwSetWindowTitle(window.getWindow(), winTitle.c_str());
+}
+
 void Engine3D::setCamera(float posX, float posY, float posZ) {
 	AVector3 Position = { posX, posY, posZ };
 	UserCamera = Camera(Position, -90.0f, 0.0f);
@@ -32,37 +36,37 @@ void Engine3D::DEBUG_showCameraVectors() {
 	std::cout << UserCamera.Position.x << " " << UserCamera.Position.y << " " << UserCamera.Position.z<<"\n";
 	std::cout << UserCamera.Yaw <<" "<< UserCamera.Pitch << "\n";
 }
+void Engine3D::DEBUG_ArrayOrganizers() {
 
-int Engine3D::setupGLFW(const int WINDOW_WIDTH, const int WINDOW_HEIGHT, const char * WINDOW_TITLE) {
-	// INITIALIZE GLFW
-	glfwInit();
-	// SOME SPECS FOR OUR OPENGL VERSION THAT WE SEND TO GLFW
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	//CORE profile from OPENGL; only modern functions
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	//Create the WINDOW OBJECT with our defined width and height and title
-	window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, NULL, NULL);
-	//Error checking if anything went wrong in the window creating process
-	if (window == NULL) {
+	std::cout << "VBO Total Bytes: " << getScene()->GetVBOsize() * sizeof(AVertex) << "\n";
+	std::cout << "EBO Total Bytes: " << getScene()->GetEBOsize() * sizeof(GLuint) << "\n";
+
+	std::cout << "\nPrinting VBO_Organizer... \n";
+	getScene()->PrintVBO();
+	std::cout << "Printing EBO_Organizer... \n";
+	getScene()->PrintEBO();
+
+}
+
+int Engine3D::setupWindow(const int WINDOW_WIDTH, const int WINDOW_HEIGHT, const char * WINDOW_TITLE) {
+	
+	bool success = window.CreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE);
+	if (!success) {
 		std::cout << "Error when creating window \n";
-		glfwTerminate();
-		return 0; //
+		EngineTerminate();
+		return -1;
 	}
-	//Tell GLFW we are using our created window as it's context
-	glfwMakeContextCurrent(window);
-
 	//Load GLAD (needed to configure OpenGL)
 	gladLoadGL();
 	//Specify Viewport to OpenGL ( from (0,0) to (W_WIDTH,W_HEIGHT) )
 	glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-	windowWidth = WINDOW_WIDTH;
-	windowHeight = WINDOW_HEIGHT;
-	windowAspectRatio = (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT;
+
+	cfg.Exec(WINDOW_SETUP_STAGE);
+
 	return 1;
 }
 
-const int Engine3D::getDrawStyle(const char* style) {
+int Engine3D::getDrawStyle(const char* style) {
 	if (strcmp(style, "static") == 0) return GL_STATIC_DRAW;
 	if (strcmp(style, "stream") == 0) return GL_STREAM_DRAW;
 	if (strcmp(style, "dynamic") == 0) return GL_DYNAMIC_DRAW;
@@ -71,427 +75,287 @@ const int Engine3D::getDrawStyle(const char* style) {
 
 void Engine3D::setupShaders() {
 
-	//if (UserCamera == nullptr) { std::cerr << "Unable to setup Shader before Camera Object, please call setCamera() first \n"; return; }
-
-	shaderProgram.Setup("Shaders/default.vert", "Shaders/default.frag");
-
 	instanceProgram.Setup("Shaders/instance.vert", "Shaders/instance.frag");
 
-	//std::cout << "Shader setup complete! \n";
-
-	// DEFAULT SHADER PROGRAM
-
-	//lightDirUnifLoc = glGetUniformLocation(shaderProgram.ID, "lightDirection");
-
-	// INSTANCE SHADER PROGRAM
-
-	//lightDirUnifLoc = glGetUniformLocation(instanceProgram.ID, "lightDirection");
+	shadowProgram.Setup("Shaders/shadow.vert", "Shaders/shadow.frag");
 
 	glEnable(GL_DEPTH_TEST);
 
+	cfg.Exec(SHADER_SETUP_STAGE);
+
 }
 
-void Engine3D::setupGeometryArrayObjects(const int drawStyle = GL_STATIC_DRAW) {
-	//std::cout << "VAO Setup \n";
+void Engine3D::setupGeometryArrayObjects(const char* style) {
+	
+	const int drawStyle = getDrawStyle(style);
+
 	VAO_1.Setup();
-
 	VAO_1.Bind();
-	//std::cout << "VAO Setup and Binding complete \n";
-	/*
-	std::vector<AVertex>& worldVertices = MainScene.getVertStoreLocation().getWorldVertices();
 
-	std::vector<GLuint>& VertIndicies = MainScene.getVertStoreLocation().getVertIndicies();
-	*/
-	std::cout << "Got vertex and indicies buffers \n";
+	if (DEBUG)std::cout << "Got vertex and indicies buffers \n";
 
-	std::vector<AVertex>& vert = MainScene.GetVBO_Organizer().GetMultiArray();
-	std::vector<GLuint>& indicies = MainScene.GetEBO_Organizer().GetMultiArray();
+	auto vert = MainScene.GetVBO_Vector();
+	auto indicies = MainScene.GetEBO_Vector();
+
 	VBO_1.Setup(vert.data(), vert.size() * sizeof(AVertex), drawStyle);
 	EBO_1.Setup(indicies.data(), indicies.size() * sizeof(GLuint), drawStyle);
 
-	std::cout << "Total VBO elements: " << vert.size() << "\n";
-
-	std::cout << "VBO & EBO setup complete \n";
+	if (DEBUG) {
+		std::cout << "Total VBO elements: " << vert.size() << "\n";
+		std::cout << "VBO & EBO setup complete \n";
+	}
 
 	GLsizei stride = sizeof(AVertex); //32 bytes
 	
 	// APosition ( 3 floats)
-	VAO_1.LinkVBO(VBO_1, 0, 3, GL_FLOAT, stride, GL_FALSE, (void*)0);
+	VAO_1.LinkVBO(VBO_1, 0, 3, GL_FLOAT, stride, GL_FALSE, voidcast(0));
 	// RGBA	( uint32 = 4 * byte )
-	VAO_1.LinkVBO(VBO_1, 1, 4, GL_UNSIGNED_BYTE, stride, GL_TRUE, (void*)12);
+	VAO_1.LinkVBO(VBO_1, 1, 4, GL_UNSIGNED_BYTE, stride, GL_TRUE, voidcast(12));
 	// ANormal ( 3 floats )
-	VAO_1.LinkVBO(VBO_1, 2, 3, GL_FLOAT, stride, GL_FALSE, (void*)16);
+	VAO_1.LinkVBO(VBO_1, 2, 3, GL_FLOAT, stride, GL_FALSE, voidcast(16));
 	// UV ( uint32 = short + short )
-	VAO_1.LinkVBO(VBO_1, 3, 2, GL_UNSIGNED_SHORT, stride, GL_TRUE, (void*)28);
+	VAO_1.LinkVBO(VBO_1, 3, 2, GL_UNSIGNED_SHORT, stride, GL_TRUE, voidcast(28));
 
-	std::cout << "VBO linking complete \n";
+	if (DEBUG)std::cout << "VBO linking complete \n";
 
 	depthTextureObject.setupFBO();
-	depthTextureObject.setupDepthTexture(2048);
+	depthTextureObject.setupDepthTexture(4096);
 
-	//std::cout << "Setup FBO complete \n";
+	if (DEBUG)std::cout << "Setup FBO complete \n";
 
 	VAO_1.Unbind();
 	VBO_1.Unbind();
 	EBO_1.Unbind();
 
-	//std::cout << "Unbinding..\n";
+	if (DEBUG)std::cout << "Unbinding..\n";
+
+	cfg.Exec(GEOMETRY_ARRAY_OBJECTS_SETUP_STAGE);
 }
 
-void Engine3D::setupInstanceVBO() {
+void Engine3D::SetupFull(const char* drawStyle) {
+	engine->setCamera(0.0f, 40.0f, 120.0f); // Default Player Camera Position
+	engine->setSunCamera(200.0f, 200.0f, 200.0f); // Default Sun Camera Position
 
-	// We create a VBO for matrices of instances
-	glGenBuffers(1, &instanceVBO);
-	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-	// We specify GL_DYNAMIC_DRAW beacause our values will change frequently as the camera moves
-	// We need a new relative translation matrix every frame for every instance,
-	// Even though our camera view and proj matrix stay the same for every instance
+	// Configure shaders
+	engine->setupShaders();
 
-	int matarraysize = MainScene.GetInstanceOrganizer().GetMultiArray().size();
-
-	glBufferData(GL_ARRAY_BUFFER, matarraysize * sizeof(InstanceData), NULL, GL_DYNAMIC_DRAW);
-
-	// Configure VAO for mat4 matricies (4*vec4 size)
-	VAO_1.Bind();
-	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-
-	for (int i = 0; i < 4; i++) {
-		glEnableVertexAttribArray(4 + i);
-		glVertexAttribPointer(4 + i, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceData), (void*)(sizeof(glm::vec4) * i));
-		glVertexAttribDivisor(4 + i, 1);
-	}
-	glEnableVertexAttribArray(8);
-	glVertexAttribPointer(8, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(InstanceData), (void*)64);
-	glVertexAttribDivisor(8, 1);
-	glEnableVertexAttribArray(9);
-	glVertexAttribPointer(9, 2, GL_UNSIGNED_SHORT, GL_TRUE, sizeof(InstanceData), (void*)68);
-	glVertexAttribDivisor(9, 1);
-	VAO_1.Unbind();
-
-}
-
-void Engine3D::DrawInstances(Blueprint* BLUEPRINT, Tile* TILE) {
-
-	if (TILE == nullptr) return;
-
-	try {
-
-		int HandleID = BLUEPRINT->GetID() | (TILE->GetTileID() << Tile::shiftComponent);
-		Handle InstancesHandle = MainScene.GetInstanceOrganizer().GetHandleData(HandleID);
-
-		Handle BlueprintHandle = MainScene.GetBlueprintHandle(BLUEPRINT, EBO_ORGANIZER_TARGET);
-
-		void* offsetPtr = (void*)(uintptr_t)(BlueprintHandle.offset * sizeof(GLuint));
-
-		glDrawElementsInstanced(GL_TRIANGLES, BlueprintHandle.size, GL_UNSIGNED_INT, offsetPtr, InstancesHandle.size);
-	}
-	catch (ArrayOrganizerException& e) {
-		std::cout << e.what() << "\n";
-	}
+	// Configure OpenGL essentials:
+	// 1) VAO (Vertex Array Object) - here we store "layouts"; we bind with VBO, EBO, instanceVBO
+	// 2) VBO (Vertex Buffer Object) - here we store Blueprint vertices and send them to OpenGL
+	// 3) EBO (Entity Buffer Object) - here we store vertex indicies, such that OpenGL knows
+	engine->setupGeometryArrayObjects(drawStyle);
 }
 
 Camera& Engine3D::getCamera(bool Sun) { if (Sun) { return SunCamera; } return UserCamera; }
 Scene* Engine3D::getScene() { return &MainScene; }
 
-void Engine3D::initGameFrame() {
-	//Set background color to be drawn
+void Engine3D::initGameFrame(float timeOfDay) {
+
+	float latitudeDeg = 40.0f;
+
+	float hourAngle = (timeOfDay - 12.0f) * (glm::pi<float>() / 12.0f);
+	float latRad = glm::radians(latitudeDeg);
+
+	float x = sin(hourAngle);
+	float y = cos(hourAngle) * cos(latRad);
+	float z = cos(hourAngle) * sin(latRad);
+
+	SunCamera.Position = AVector3(x * 100.0f, y * 100.0f, z * 100.0f);
+
+	// Framecounter
+	double CURRENT_TIME = glfwGetTime();
+	double timeDifference = CURRENT_TIME - FPS.PREV_TIME;
+	FPS.frameCounter++;
+	if (timeDifference >= FPS.FPSsampleTime) {
+		std::string strFPS = std::to_string((1.0f / timeDifference) * FPS.frameCounter);
+		FPS.msPerFrame = (timeDifference / FPS.frameCounter) * 1000.0f;
+		std::string msPerFrame = std::to_string(FPS.msPerFrame);
+		std::string winTitle = "WINDOW | " + strFPS + " FPS | " + msPerFrame + " ms/frame";
+		setWindowTitle(winTitle);
+		FPS.PREV_TIME = CURRENT_TIME;
+		FPS.frameCounter = 0;
+	}
+	// Set background color to be drawn
 	glClearColor(backgroundColor.R, backgroundColor.G, backgroundColor.B, backgroundColor.A);
+
+	cfg.Exec(INIT_GAME_FRAME_STAGE);
 }
 
 
 void Engine3D::registerCameraInput(float FOVdeg, float zNear, float zFar) {
-	UserCamera.Inputs(window);
+
 	//UserCamera.Matrix(FOVdeg, zNear, zFar, windowAspectRatio, shaderProgram);
-	UserCamera.Matrix(FOVdeg, zNear, zFar, windowAspectRatio, instanceProgram);
+	UserCamera.Matrix(FOVdeg, zNear, zFar, window.getAspectRatio(), instanceProgram);
+
+	if (cfg.CameraOverride == true) {
+		cfg.Exec(CAMERA_INPUT_STAGE);
+
+		return;
+	}
+
+	UserCamera.Inputs(window.getWindow(), FPS.msPerFrame);
+
+	cfg.Exec(CAMERA_INPUT_STAGE);
 }
 
-void Engine3D::DrawAllInstances() {
-	std::vector<int> handleIDsFromRoot;
-	MainScene.WorldRoot->RecurseInTilesOutputHandleIDs(handleIDsFromRoot);
-	for (int i = 0; i < handleIDsFromRoot.size(); i++) {
-		int HandleID = handleIDsFromRoot[i];
+void Engine3D::DrawAll() {
+	int totalIndices = MainScene.GetEBOsize();
+	if (totalIndices <= 0) return;
 
-		Handle InstH = MainScene.GetInstanceOrganizer().GetHandleData(HandleID);
+	VAO_1.Bind();
 
-		Handle BlueprintHandle = MainScene.GetEBO_Organizer().GetHandleData(HandleID & 4095);
+	glDrawElements(
+		GL_TRIANGLES,
+		totalIndices,
+		GL_UNSIGNED_INT,
+		nullptr
+	);
 
-		glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-		uint32_t stride = sizeof(InstanceData);
-		if (stride != 72) std::cout << "ALERT!";
-		uintptr_t base = (uintptr_t)(InstH.offset * stride);
-		for (int j = 0; j < 4; j++) {
-			glEnableVertexAttribArray(4 + j);
-			glVertexAttribPointer(4 + j, 4, GL_FLOAT, GL_FALSE, stride, (void*)(base + j * 16));
-			glVertexAttribDivisor(4 + j, 1);
-		}
-
-		uint32_t offRGBA = 64;
-		uint32_t offUV = 68;
-
-		glEnableVertexAttribArray(8);
-		void* offset = (void*)(uintptr_t)(InstH.offset * stride + offRGBA);
-		glVertexAttribPointer(8, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, offset);
-		glVertexAttribDivisor(8, 1);
-		glEnableVertexAttribArray(9);
-		offset = (void*)(uintptr_t)(InstH.offset * stride + offUV);
-		glVertexAttribPointer(9, 2, GL_UNSIGNED_SHORT, GL_TRUE, stride, offset);
-		glVertexAttribDivisor(9, 1);
-
-		void* offsetPtr = (void*)(uintptr_t)(BlueprintHandle.offset * sizeof(GLuint));
-
-		Handle VBO_Handle = MainScene.GetVBO_Organizer().GetHandleData(HandleID & 4095);
-
-		glDrawElementsInstancedBaseVertex(GL_TRIANGLES, BlueprintHandle.size, GL_UNSIGNED_INT, 
-			offsetPtr, InstH.size, VBO_Handle.offset);
-
-		//std::cout << "\n //////Rendering HandleID: " << HandleID << " with " << InstH.size << " instances. \n\n";
-
-	}
+	VAO_1.Unbind();
 }
 
 void Engine3D::shadowPass() {
-	glBindFramebuffer(GL_FRAMEBUFFER, depthTextureObject.FBO_ID);
-	glViewport(0, 0, 2048, 2048);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthTextureObject.GetFBO_ID());
+	glViewport(0, 0, 4096, 4096);
 	glClear(GL_DEPTH_BUFFER_BIT);
 
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_FRONT);
 	
+	shadowProgram.Activate();
+	VAO_1.Bind();
+
+	// The sun looks from the UserCamera's position, so the shadowsMap doesn't stay forever at (0,0,0)
+	SunCamera.LightMatrix(500.0f, shadowProgram, false, UserCamera.Position);
+
+	DrawAll();
 	
-	shaderProgram.Activate();
-	VAO_1.Bind();
-
-	glUniform3f(shaderProgram.GetUniformLocation("CamPosition"), 0, 0, 0);
-
-	SunCamera.LightMatrix(500.0f, shaderProgram, false);
-
-	// The Sun is looking from it's Position to the center (0,0,0);
-	glUniform3f(shaderProgram.GetUniformLocation("lightDirection"), SunCamera.Position.x, SunCamera.Position.y, SunCamera.Position.z);
-
-	//glDrawElements(GL_TRIANGLES, indiciesSize, GL_UNSIGNED_INT, 0);
-
-
-	instanceProgram.Activate();
-	VAO_1.Bind();
-
-	int matarraysize = MainScene.GetInstanceOrganizer().GetMultiArray().size();
-	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, matarraysize * sizeof(InstanceData), &MainScene.GetInstanceOrganizer().GetMultiArray()[0]);
-
-	glUniform3f(instanceProgram.GetUniformLocation("CamPosition"), 0, 0, 0);
-
-	SunCamera.LightMatrix(500.0f, instanceProgram, true);
-
-	glUniform3f(instanceProgram.GetUniformLocation("lightDirection"), SunCamera.Position.x, SunCamera.Position.y, SunCamera.Position.z);
-
-	DrawAllInstances();
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK);
 }
 
 void Engine3D::renderPass(float FOVdeg, float zNear, float zFar) {
-
-	this->registerCameraInput(FOVdeg, zNear, zFar);
-
-	glViewport(0, 0, windowWidth, windowHeight);
-	//Clear the BACK BUFFER and assign our color to it
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	glCullFace(GL_BACK);
-
 	
-
-	shaderProgram.Activate();
-	VAO_1.Bind();
-
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
-	SunCamera.LightMatrix(500.0f, shaderProgram, true);
-
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, depthTextureObject.depthTexture);
-
-	glUniform1i(shadowMapLocation, 0);
-
-	//glDrawElements(GL_TRIANGLES, indiciesSize, GL_UNSIGNED_INT, 0);
-
-	
-
-	// START TO DRAW INSTANCES
-
 	instanceProgram.Activate();
 	VAO_1.Bind();
 
-	int matarraysize = MainScene.GetInstanceOrganizer().GetMultiArray().size();
-	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, matarraysize * sizeof(InstanceData), &MainScene.GetInstanceOrganizer().GetMultiArray()[0]);
+	this->registerCameraInput(FOVdeg, zNear, zFar);
+	instanceProgram.SetUniformVector3("lightDirection", SunCamera.Position);
+	// The sun looks from the UserCamera's position, so the shadowsMap doesn't stay forever at (0,0,0)
+	SunCamera.LightMatrix(500.0f, instanceProgram, true, UserCamera.Position);
 
-	SunCamera.LightMatrix(500.0f, instanceProgram, true);
+	glUniform1i(instanceProgram.GetUniformLocation("shadowMap"), 0);
 
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDrawBuffer(GL_BACK);
+	glViewport(0, 0, window.getWidth(), window.getHeight());
 
+	glCullFace(GL_BACK);
+
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+
+	
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// Activate Depth Texture
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, depthTextureObject.depthTexture);
-
-	glUniform1i(glGetUniformLocation(instanceProgram.ID, "shadowMap"), 0);
-
-	// TODO -- INSTANCE SHADER CONFIGURE, UNIFORMS IN OUR SAHDER
-	//		-- INSTANCE DATA FORWARDING & FORMATING
-	//		-- INSTANCE RENDERING
-	DrawAllInstances();
-
-	//Swap BACK BUFFER with FRONT BUFFER
-	glfwSwapBuffers(window);
-	// Get events (for controls, event handling, closing, etc.)
-	glfwPollEvents();
+	glBindTexture(GL_TEXTURE_2D, depthTextureObject.GetTexID());
+	
+	DrawAll();
+	
+	glDisable(GL_BLEND);
 }
 
+void Engine3D::UpdateBuffers() {
+	if (MainScene.GetUpdateStatus()) {
+
+		std::lock_guard<std::mutex> lock(MainScene.GetMutex());
+
+		const auto& vert = MainScene.GetVBO_Vector();
+		const auto& indicies = MainScene.GetEBO_Vector();
+
+		if (vert.empty() || indicies.empty()) return;
+
+		VBO_1.Bind();
+		glBufferData(GL_ARRAY_BUFFER, vert.size() * sizeof(AVertex), vert.data(), GL_STATIC_DRAW);
+
+		EBO_1.Bind();
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, indicies.size() * sizeof(GLuint), indicies.data(), GL_STATIC_DRAW);
+
+		MainScene.ResetUpdateStatus();
+	}
+}
+
+void Engine3D::Render(float timeOfDay) {
+
+	// Send & Update Buffers
+	UpdateBuffers();
+	//
+
+	initGameFrame(timeOfDay);
+
+	if (cfg.PreRenderRequest != nullptr) {
+		//std::cout << "Executing Pre Render Request!\n";
+		cfg.PreRenderRequest->Exec(); 
+	}
+
+	if (cfg.RenderOverride) {
+
+		cfg.Exec(RENDER_INSTANCES_STAGE);
+
+		//std::cout << "Executed Render Override \n";
+
+		if (cfg.PostRenderRequest != nullptr) {
+			//std::cout << "Executing Post Render Request!\n";
+			cfg.PostRenderRequest->Exec();
+		}
+		
+		//Swap BACK BUFFER with FRONT BUFFER
+		glfwSwapBuffers(window.getWindow());
+		// Get events (for controls, event handling, closing, etc.)
+		glfwPollEvents();
+
+		return;
+	}
+
+	shadowPass();
+	renderPass(45.0f, 0.1f, 1000.0f);
+
+	if (cfg.PostRenderRequest != nullptr) {
+		//std::cout << "Executing Post Render Request!\n";
+		cfg.PostRenderRequest->Exec();
+	}
+
+	//Swap BACK BUFFER with FRONT BUFFER
+	glfwSwapBuffers(window.getWindow());
+	// Get events (for controls, event handling, closing, etc.)
+	glfwPollEvents();
+
+}
+
+/* FUNCTIONS MAY BE USED AT A LATER TIME WHEN RENDERING ACCOUNTS FOR VISIBLE TILES
 Tile* Engine3D::getVisibleCameraFrustum() {
 	return MainScene.FindTileForPosition(
 		AVertex(), UserCamera.Position
 	);
 }
+*/
 
 void Engine3D::EngineTerminate() {
 
-	/*
-	//Delete meshes
-	for (auto& MeshObj : MainScene.getMeshes()) {
-		delete MeshObj;
-	}
-	*/
-
 	//Delete our VAOs, VBOs, EBOs
-	VAO_1.Delete();
-	VBO_1.Delete();
-	EBO_1.Delete();
-
-	//Delete instanceVBO
-	glDeleteBuffers(1, &instanceVBO);
+	if (engine->VAO_1.GetCompleteStatus()) engine->VAO_1.Delete();
+	if (engine->VBO_1.GetCompleteStatus()) engine->VBO_1.Delete();
+	if (engine->EBO_1.GetCompleteStatus()) engine->EBO_1.Delete();
 
 	//Delete shader
-	shaderProgram.Delete();
+	if (engine->shaderProgram.GetCompleteStatus()) engine->shaderProgram.Delete();
+	if (engine->instanceProgram.GetCompleteStatus()) engine->instanceProgram.Delete();
 
 	//Destroy WINDOW OBJECT
-	glfwDestroyWindow(window);
-	//Terminate GLFW
-	glfwTerminate();
-}
+	engine->window.Terminate();
 
-Blueprint* Engine3D::LoadSTLGeomFile(const char* fileName, float scale) {
-	std::vector<float> coords, normals;
-	std::vector<unsigned int> tris, solids;
+	delete engine;
 
-	try {
-		stl_reader::ReadStlFile(fileName, coords, normals, tris, solids);
-
-		std::vector<AVertex> vert;
-		std::vector<GLuint> indicies;
-
-		// Avoid duplicate verticies by using a map from the
-		// Original vertex index in the STL file to 
-		// A new index to be put in indicies 
-		// (inserted even if vertex index is already in map)
-		std::unordered_map<int, GLuint> uniqueVert;
-
-		const size_t totalIndices = tris.size();
-
-		std::cout <<"Mesh coord count: " << coords.size() << " trig count: " << tris.size()<<"\n";
-
-		for (int i = 0; i < totalIndices; i++) {
-			int STLfileIndex = tris[i];
-
-			if (uniqueVert.find(STLfileIndex) == uniqueVert.end()) {
-				// Found a unique vertex that is not a duplicate
-				// Add to our map
-				uniqueVert[STLfileIndex] = vert.size();
-
-				int coordINDEX = 3 * STLfileIndex;
-				float* c = &coords[coordINDEX];
-
-				vert.push_back(AVertex(c[0] * scale, c[1] * scale, c[2] * scale, 200, 200, 200, 255));
-			}
-
-			indicies.push_back(uniqueVert[STLfileIndex]);
-		}
-
-		std::cout << "Mesh created \n";
-
-		Blueprint::CalculateSurfaceNormals(vert, indicies);
-
-		return MainScene.CreateBlueprint(vert, indicies);
-	}
-	catch (std::exception& e) {
-		std::cout << e.what() << std::endl;
-	}
-
-	return nullptr;
-}
-
-Blueprint* Engine3D::CreatePrism(const std::vector<AVertex>& vertices, int VertexNumber, float height) {
-
-	std::vector<GLuint> indicies;
-
-	std::vector<AVertex> V = vertices;
-	V.reserve(VertexNumber * 2);
-
-	if (vertices.size() < 3) { std::cout << "Mesh does not contain any triangles \n"; return nullptr; };
-
-	// 0 -> 1 -> 2
-	// |  / |  / |
-	// | /  | /  |
-	// 3 -> 4 -> 5
-
-	for (int i = 0; i < VertexNumber; i++) {
-		AVertex vclone = vertices[i];
-		vclone.POS.y += height;
-		V.push_back(vclone); // create bottom vertex
-	}
-	for (int i = 0; i < VertexNumber-1; i++) {
-		//LATERAL FACE 1
-		indicies.push_back(i);
-		indicies.push_back(VertexNumber + i);
-		indicies.push_back(i + 1);
-		//LATERAL FACE 2
-		indicies.push_back(VertexNumber + i);
-		indicies.push_back(VertexNumber + i + 1);
-		indicies.push_back(i + 1);
-	}
-
-	//LATERAL FACE 1
-	indicies.push_back(VertexNumber - 1);
-	indicies.push_back(2 * VertexNumber - 1);
-	indicies.push_back(0);
-	//LATERAL FACE 2
-	indicies.push_back(VertexNumber);
-	indicies.push_back(0);
-	indicies.push_back(2 * VertexNumber - 1);
-
-	for (int i = 1; i < VertexNumber-1; i++) {
-		//BOTTOM FACE
-		indicies.push_back(0);
-		indicies.push_back(i + 1);
-		indicies.push_back(i);
-		
-		//TOP FACE
-		indicies.push_back(VertexNumber);
-		indicies.push_back(VertexNumber + i + 1);
-		indicies.push_back(VertexNumber + i);
-	}
-
-	return MainScene.CreateBlueprint(V, indicies);
-}
-
-Blueprint* Engine3D::CreateRectPrism(float length, float width, float height) {
-	std::vector<AVertex> v;
-	v.resize(4);
-	v[0] = AVertex( -length / 2.0f, -height / 2.0f, -width / 2.0f, 200, 200, 200, 255);
-	v[1] = AVertex( length / 2.0f, -height / 2.0f, -width / 2.0f, 200, 200, 200, 255);
-	v[2] = AVertex( length / 2.0f, -height / 2.0f, width / 2.0f, 200, 200, 200, 255);
-	v[3] = AVertex( -length / 2.0f, -height / 2.0f, width / 2.0f, 200, 200, 200, 255);
-	return CreatePrism(v, 4, height);
-}
-
-Blueprint* Engine3D::CreateCube(float length) {
-	return CreateRectPrism(length, length, length);
 }

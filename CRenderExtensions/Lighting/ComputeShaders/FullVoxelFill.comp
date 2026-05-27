@@ -1,0 +1,167 @@
+#version 430 core
+
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 16) in;
+
+struct Triangle {
+    vec4 v0; // v0.w = instanceID
+    vec4 v1;
+    vec4 v2;
+};
+
+layout(std430, binding = 0) readonly buffer MeshBuffer {
+    Triangle triangles[];
+};
+
+layout(binding = 0, r16f) uniform image3D CubemapImage;
+layout(binding = 1, r32i) uniform iimage3D InstanceImage;
+
+uniform vec3 worldMin;
+uniform vec3 worldMax;
+uniform ivec3 gridRes;
+uniform int triangleCount;
+
+struct Intersection {
+    float yCoord;
+    float insID;
+};
+
+bool RayTriangleIntersectY(vec3 v0, vec3 v1, vec3 v2, float rayX, float rayZ, out float hitY) {
+    float det = (v1.z - v2.z) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.z - v2.z);
+    if (abs(det) < 0.00001) return false;
+
+    float factorA = ((v1.z - v2.z) * (rayX - v2.x) + (v2.x - v1.x) * (rayZ - v2.z)) / det;
+    float factorB = ((v2.z - v0.z) * (rayX - v2.x) + (v0.x - v2.x) * (rayZ - v2.z)) / det;
+    float factorC = 1.0 - factorA - factorB;
+
+    if (factorA >= 0.0 && factorB >= 0.0 && factorC >= 0.0) {
+        hitY = factorA * v0.y + factorB * v1.y + factorC * v2.y;
+        return true;
+    }
+    return false;
+}
+
+void main() {
+    // This thread evaluates a single ray
+    ivec2 rayOrigin = ivec2(gl_GlobalInvocationID.xz);
+    // Bounds check
+    if (rayOrigin.x >= gridRes.x || rayOrigin.y >= gridRes.z) return;
+
+    // Get voxel size relative to resolution and ray x & z positions
+    vec3 voxelSize = (worldMax - worldMin) / vec3(gridRes);
+    float rayX = worldMin.x + (float(rayOrigin.x) + 0.5) * voxelSize.x;
+    float rayZ = worldMin.z + (float(rayOrigin.y) + 0.5) * voxelSize.z;
+
+    // The instersections are stored, then sorted
+    const int MAX_HITS = 16;
+    Intersection hits[MAX_HITS];
+    int hitCount = 0;
+
+    // First get all of the intersections
+    for (int i = 0; i < triangleCount; ++i) {
+        Triangle tri = triangles[i];
+        float hitY = 0.0;
+
+        // Raytrace in Y direction and perform a fast triangle intersect check
+        if (RayTriangleIntersectY(tri.v0.xyz, tri.v1.xyz, tri.v2.xyz, rayX, rayZ, hitY)) {
+            if (hitY >= worldMin.y && hitY <= worldMax.y) {
+                if (hitCount < MAX_HITS) {
+                    hits[hitCount] = Intersection(hitY, tri.v0.w);
+                    hitCount++;
+                }
+            }
+        }
+    }
+
+    // Sort algorithm of intersections (comparing by y value)
+    // This gets the right order of intersections along the ray
+    for (int i = 0; i < hitCount - 1; i++) {
+        for (int j = 0; j < hitCount - i - 1; j++) {
+            if (hits[j].yCoord > hits[j + 1].yCoord) {
+                Intersection temp = hits[j];
+                hits[j] = hits[j + 1];
+                hits[j + 1] = temp;
+            }
+        }
+    }
+
+    // Evaluate all voxel on Y axis to perform Inside/Outside test
+    for (int y = 0; y < gridRes.y; y++) {
+    
+        // Precise bounds of the current voxel along the Y axis
+        float voxelMinY = worldMin.y + float(y) * voxelSize.y;
+        float voxelMaxY = voxelMinY + voxelSize.y;
+        float voxelCenterY = voxelMinY + (0.5 * voxelSize.y);
+        
+        ivec3 pos = ivec3(rayOrigin.x, y, rayOrigin.y);
+
+        // Look for an instanceID
+        int activeInstanceID = -1;
+        bool isInside = false;
+
+        // Check if the voxel slices a triangle's plane
+        for (int i = 0; i < hitCount; i++) {
+            if (hits[i].yCoord >= voxelMinY && hits[i].yCoord <= voxelMaxY) {
+                isInside = true;
+                activeInstanceID = int(round(hits[i].insID));
+                break; // Boundary found, we can skip parity testing for this voxel
+            }
+        }
+
+        // For every voxel we count how many times the ray intersected geometry
+
+        // If this count is odd, the voxel is inside a mesh
+        // []    MESH_i   *--------[X]---------[X]---MESH_j----[X]------
+        //                ^
+        //                INSIDE
+
+        // If this count is even, the voxel is outside a mesh
+        // []    MESH_i            []       *---[X]---MESH_j----[X]------
+        //                                  ^
+        //                                  OUTSIDE
+
+        if (!isInside) {
+            int maxIntersections = 0;
+            for (int i = 0; i < hitCount; ++i) {
+
+                // Count only intersections in the DOWN direction, below the voxel
+                if (voxelCenterY > hits[i].yCoord) {
+                
+                    // Get the ID stored at that intersection (gotten from triangle)
+                    int testID = int(round(hits[i].insID));
+                
+                    // Count the intersections
+                    int countForThisID = 0;
+                    for (int j = 0; j < hitCount; ++j) {
+                        if (voxelCenterY > hits[j].yCoord && int(round(hits[j].insID)) == testID) {
+                            countForThisID++;
+                        }
+                    }
+
+                    // Check count parity
+                    if ((countForThisID % 2) != 0) {
+
+                        // VOXEL IS INSIDE A MESH
+
+                        // The INSTANCE with the MOST intersections gets priority
+
+                        if (countForThisID > maxIntersections) {
+                            maxIntersections = countForThisID;
+                            activeInstanceID = testID;
+                            isInside = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Write the result to our Binary 3D Texture (Empty / Full)
+        // And to our InstanceID 3D Texture (InstanceID / -1 if outside)
+        if (activeInstanceID >= 0) {
+            imageStore(CubemapImage, pos, vec4(1.0, 0.0, 0.0, 0.0));
+            imageStore(InstanceImage, pos, ivec4(activeInstanceID, 0, 0, 0));
+        } else {
+            imageStore(CubemapImage, pos, vec4(0.0, 0.0, 0.0, 0.0));
+            imageStore(InstanceImage, pos, ivec4(-1, 0, 0, 0));
+        }
+    }
+}

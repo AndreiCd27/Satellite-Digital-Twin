@@ -8,6 +8,7 @@ void VBO::Setup(std::vector<AVertex>& worldVertices, GLsizeiptr size, const int 
 	glBufferData(GL_ARRAY_BUFFER, size, worldVertices.data(), drawStyle);
 	Capacity = size;
 	//std::cout << "Setup VBO complete!!!! \n";
+	SetupComplete = true;
 }
 
 void VBO::Setup(const AVertex* PTR, GLsizeiptr size, const int drawStyle) {

@@ -1,16 +1,13 @@
 
 #include "Camera.h"
-#include "GeometryLoader.h"
+#include "GeometryBasics.h"
 
-Camera::Camera(AVector3 pos, float _Yaw, float _Pitch)
+Camera::Camera(AVector3 pos, float _Yaw, float _Pitch) : Position(pos)
 {
 	//std::cout << "C -> Camera \n";
-	Position = pos;
 	Yaw = _Yaw;
 	Pitch = _Pitch;
 }
-
-const GLfloat scalingFactor = 0.001f;
 
 void Camera::Matrix(float FOVdeg, float near, float far, float aspect, Shader& shader) {
 	glm::vec3 front;
@@ -26,19 +23,22 @@ void Camera::Matrix(float FOVdeg, float near, float far, float aspect, Shader& s
 
 	glm::mat4 perspMatrix = mat4Tuple.proj * mat4Tuple.view;
 
-	glUniform3f(shader.GetUniformLocation("CamPosition"), Position.x, Position.y, Position.z);
-	glUniformMatrix4fv(shader.GetUniformLocation("perspectiveMatrix"), 1, GL_FALSE, glm::value_ptr(perspMatrix));
+	shader.SetUniformVector3("CamPosition", Position);
+	shader.SetUniformMatrix4by4("perspectiveMatrix", perspMatrix);
 }
 
-void Camera::LightMatrix(float shadowMapScale, Shader& shader, bool TextureBias) {
+void Camera::LightMatrix(float shadowMapScale, Shader& shader, bool TextureBias, AVector3 lookAtFrom) {
 
 	//Light matrix uniformID is already inside SunCamera (see class Engine3D)
 
-	glm::vec3 lightPos = glm::vec3(this->Position.x, this->Position.y, this->Position.z);
+	glm::vec3 lightDir = (glm::vec3)Position.Normalize();
+
+	float distance = 128.0f; // Distance from UserCamera to SunCamera
 
 	//////////////////////////////////////////////////////////////////////////////// CHECK THIS
 	mat4Tuple.proj = glm::ortho(-shadowMapScale, shadowMapScale, -shadowMapScale, shadowMapScale, -1000.0f, 1000.0f);
-	mat4Tuple.view = glm::lookAt(lightPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	mat4Tuple.view = glm::lookAt((glm::vec3)lookAtFrom + lightDir * distance, 
+		(glm::vec3)lookAtFrom, glm::vec3(0.0f, 1.0f, 0.0f));
 
 	glm::mat4 depthMatrix = mat4Tuple.proj * mat4Tuple.view;
 
@@ -50,30 +50,24 @@ void Camera::LightMatrix(float shadowMapScale, Shader& shader, bool TextureBias)
 			0.5, 0.5, 0.5, 1.0
 		);
 		depthMatrix = biasMatrix * depthMatrix;
-		glUniformMatrix4fv(shader.GetUniformLocation("lightPerspMatrix"), 
-			1, GL_FALSE, glm::value_ptr(depthMatrix)
-		);
+		shader.SetUniformMatrix4by4("lightPerspMatrix",depthMatrix);
 	} else {
-		glUniformMatrix4fv(shader.GetUniformLocation("lightPerspMatrix"), 
-			1, GL_FALSE, glm::value_ptr(depthMatrix)
-		);
-		glUniformMatrix4fv(shader.GetUniformLocation("perspectiveMatrix"), 
-			1, GL_FALSE, glm::value_ptr(depthMatrix)
-		);
+		shader.SetUniformMatrix4by4("lightPerspMatrix", depthMatrix);
+		shader.SetUniformMatrix4by4("perspectiveMatrix", depthMatrix);
 		
 	}
 };
 
-void Camera::Inputs(GLFWwindow* window)
+void Camera::Inputs(GLFWwindow* window, float msPerFrame)
 {
 
 	// Handles key inputs
-
+	const float msInc = msPerFrame / 5.0f;
 	// ROTATION (Q, E, R, T)
-	if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) Yaw -= sensitivity;
-	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) Yaw += sensitivity;
-	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) Pitch -= sensitivity;
-	if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) Pitch += sensitivity;
+	if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) Yaw -= sensitivity * msInc;
+	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) Yaw += sensitivity * msInc;
+	if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) Pitch -= sensitivity * msInc;
+	if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) Pitch += sensitivity * msInc;
 
 	if (Pitch > 89.0f) Pitch = 89.0f;
 	if (Pitch < -89.0f) Pitch = -89.0f;
@@ -87,12 +81,12 @@ void Camera::Inputs(GLFWwindow* window)
 	this->Rotation = newRotation;
 
 	// (W, A, S, D, I, O)
-	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) Position += Rotation * speed;
-	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) Position += Rotation * -speed;
-	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) Position += (Rotation ^ Up).Normalize() * -speed;
-	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) Position += (Rotation ^ Up).Normalize() * speed;
-	if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) Position += Up * -speed;
-	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) Position += Up * speed;
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) Position += Rotation * speed * msInc;
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) Position += Rotation * -speed * msInc;
+	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) Position += (Rotation ^ Up).Normalize() * -speed * msInc;
+	if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) Position += (Rotation ^ Up).Normalize() * speed * msInc;
+	if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) Position += Up * -speed * msInc;
+	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) Position += Up * speed * msInc;
 
 	// Avoid camera rolling
 	if (Pitch > 89.0f) Pitch = 89.0f;

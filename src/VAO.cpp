@@ -4,6 +4,8 @@
 
 void VAO::Setup() {
 	glGenVertexArrays(1, &ID);
+
+	SetupComplete = true;
 }
 
 void VAO::LinkVBO(VBO& VBO, GLuint layout, GLuint numComp, GLenum type, GLsizei stride, bool NORMALIZED, void* offset) {

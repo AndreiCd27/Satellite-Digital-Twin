@@ -1,0 +1,56 @@
+
+#include "Scene.h"
+
+void Scene::SetGeometry(std::vector<AVertex>& vertices, std::vector<GLuint>& indicies) {
+	//std::cout << "Reset geometry\n";
+	// Block scene mutex when inserting new geometry to make sure OpenGL does not crash
+	std::lock_guard<std::mutex> lock(sceneMutex);
+
+	VBO_Vector = vertices;
+	EBO_Vector = indicies;
+
+	UpdateBuffers = true;
+}
+
+void Scene::PushGeometry(std::vector<AVertex>& add_vertices, std::vector<GLuint>& add_indicies) {
+	//std::cout << "Pushed geometry\n";
+	// Block scene mutex when inserting new geometry to make sure OpenGL does not crash
+	std::lock_guard<std::mutex> lock(sceneMutex);
+
+	VBO_Vector.insert(VBO_Vector.end(), add_vertices.begin(), add_vertices.end());
+	EBO_Vector.insert(EBO_Vector.end(), add_indicies.begin(), add_indicies.end());
+
+	UpdateBuffers = true;
+}
+
+bool Scene::GetUpdateStatus() {
+	return UpdateBuffers;
+}
+void Scene::ResetUpdateStatus() {
+	UpdateBuffers = false;
+}
+
+int Scene::GetVBOsize() {
+	return (int)VBO_Vector.size();
+}
+int Scene::GetEBOsize() {
+	return (int)EBO_Vector.size();
+}
+
+void Scene::PrintVBO() {
+	for (const auto& v : VBO_Vector) {
+		std::cout << "(X, Y, Z) = (" << v.POS.x << ", " << v.POS.y << ", " << v.POS.z << "), ID/UV = " << v.UV.UV << "\n";
+	}
+}
+void Scene::PrintEBO() {
+	for (const auto& i : EBO_Vector) {
+		std::cout << "I = " << i << "\n";
+	}
+}
+
+const std::vector<AVertex>& Scene::GetVBO_Vector() {
+	return VBO_Vector;
+}
+const std::vector<GLuint>& Scene::GetEBO_Vector() {
+	return EBO_Vector;
+}

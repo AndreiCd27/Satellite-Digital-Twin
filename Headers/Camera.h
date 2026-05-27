@@ -32,7 +32,7 @@ public:
 	// Sends the camera perspective matrix to the Vertex Shader
 	void Matrix(float FOVdeg, float nearPlane, float farPlane, float aspectRatio, Shader& shader);
 
-	void LightMatrix(float shadowMapScale, Shader& shader, bool TextureBias);
+	void LightMatrix(float shadowMapScale, Shader& shader, bool TextureBias, AVector3 lookAtFrom);
 	// Handles camera inputs
-	void Inputs(GLFWwindow* window);
+	void Inputs(GLFWwindow* window, float msPerFrame);
 };

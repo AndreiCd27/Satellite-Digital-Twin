@@ -1,0 +1,97 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Satellite image input
+layout(binding = 0, rgba8) uniform readonly image2D rawTex;
+// Building mask image input
+layout(binding = 1, rgba8) uniform readonly image2D maskTex;
+
+#define NUM_DIRECTIONS 64
+
+// Buffer that stores shadow scores for 64 directions
+layout(std430, binding = 2) buffer AngleScores {
+    uint scores[NUM_DIRECTIONS];
+};
+
+// For angle ranges (in radians)
+uniform float StartAngle;
+uniform float EndAngle;
+
+uniform int DistanceThreshold = 25;
+uniform float ShadowThreshold;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(maskTex);
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    // Process only pixels that are NOT buildings (according to our building mask)
+    float isBuilding = imageLoad(maskTex, pos).r;
+    if (isBuilding > 0.5) return;
+
+    // Process only if pixel is dark (likely shadow)
+    vec3 rgb = imageLoad(rawTex, pos).rgb;
+
+    // Some enviroment variable for light ambient control
+    // Shadows may have a slight greenish tint from the ground
+    float luminance = dot(rgb, vec3(0.3, 0.6, 0.1));
+
+    if (luminance >= ShadowThreshold) return;
+
+    // Sample around this piexel in a circle
+    float minDistance = float(DistanceThreshold);
+    ivec2 closestBuildingPos = ivec2(-1);
+    bool foundBuilding = false;
+
+    // Fast search (up to DistanceThreshold)
+    for (int dy = -DistanceThreshold; dy <= DistanceThreshold; dy += 2) {
+        for (int dx = -DistanceThreshold; dx <= DistanceThreshold; dx += 2) {
+            
+            // Limit to distanceThreshold circle radius
+            if (dx*dx + dy*dy > DistanceThreshold*DistanceThreshold) continue;
+
+            ivec2 checkPos = pos + ivec2(dx, dy);
+            if (checkPos.x < 0 || checkPos.x >= size.x || checkPos.y < 0 || checkPos.y >= size.y) continue;
+
+            if (imageLoad(maskTex, checkPos).r > 0.5) {
+                // Found a building
+
+                float dist = length(vec2(dx, dy));
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    closestBuildingPos = checkPos;
+                    foundBuilding = true;
+                }
+            }
+        }
+    }
+
+    // If a dark pixel found their building, it is a candidate for a building's shadow
+    if (foundBuilding) {
+        // Direction from building to shadow pixel
+        vec2 shadowDir = vec2(pos - closestBuildingPos);
+        
+        float angle = atan(shadowDir.y, shadowDir.x);
+        
+        // Map atan func to [0, 2*PI]
+        if (angle < 0.0) angle += 6.28318530718;
+
+        // Check angle bounds (StartAngle - EndAngle)
+
+        if (angle >= StartAngle && angle <= EndAngle) {
+            float angleRange = EndAngle - StartAngle;
+            
+            // Calculate index
+            float progress = (angle - StartAngle) / angleRange;
+            int target_idx = int(round(progress * float(NUM_DIRECTIONS - 1)));
+            target_idx = clamp(target_idx, 0, NUM_DIRECTIONS - 1);
+
+            // Every pixel "votes" once with scaled vote_influence by inverse of max distance radius
+            // Shadows closer to a building are more likely to actually be in shadow
+            uint voteWeight = uint(clamp(int(float(DistanceThreshold) - minDistance), 1, DistanceThreshold));
+
+            // Add up score for this direction using atomicAdd
+            atomicAdd(scores[target_idx], voteWeight);
+        }
+    }
+}

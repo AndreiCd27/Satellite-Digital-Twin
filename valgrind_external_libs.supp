@@ -1,0 +1,6 @@
+{
+   ignore_glfw_leaks
+   Memcheck:Leak
+   ...
+   fun:glfwInit
+}
