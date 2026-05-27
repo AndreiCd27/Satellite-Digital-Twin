@@ -7,15 +7,10 @@ project(CRender VERSION 1.0.0)
 #           PYBIND11
 
 # Python DIRS
-set(Python3_ROOT_DIR "C:/Program Files/Python313" CACHE PATH "Path to Python 3.13" FORCE)
-set(Python3_FIND_STRATEGY "LOCATION" CACHE STRING "" FORCE)
-set(Python3_FIND_REGISTRY "NEVER" CACHE STRING "" FORCE)
-set(Python3_FIND_FRAMEWORK "NEVER" CACHE STRING "" FORCE)
+set(PYBIND11_FINDPYTHON ON CACHE BOOL "Use CMake FindPython" FORCE)
+set(Pybind11_PYTHON_FREE_THREADED OFF CACHE BOOL "Disable free-threaded Python" FORCE)
 
-set(Pybind11_PYTHON_FREE_THREADED OFF CACHE BOOL "" FORCE)
-set(PYBIND11_FINDPYTHON ON CACHE BOOL "" FORCE)
-
-find_package(Python3 3.13 COMPONENTS Interpreter Development.Module Development.Embed REQUIRED)
+find_package(Python3 3.12 COMPONENTS Interpreter Development.Module Development.Embed REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -24,17 +19,6 @@ FetchContent_Declare(
   GIT_TAG        v2.13.1
 )
 FetchContent_MakeAvailable(pybind11)
-
-# Python Extension (.pyd on Windows / .so on Linux)
-pybind11_add_module(py_engine3d src/Bindings.cpp)
-set_target_properties(py_engine3d PROPERTIES 
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-)
-
-# Link with CRender classes
-target_link_libraries(py_engine3d PRIVATE glad opengl32) 
-target_include_directories(py_engine3d PRIVATE src/ Headers/ Libraries/include CRenderExtensions)
 
 #           CMAKE CONFIG
 
@@ -150,6 +134,22 @@ add_executable(${PROJECT_NAME} src/Main.cpp
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#           CONFIGURE PYBIND11
+
+pybind11_add_module(py_engine3d src/Bindings.cpp)
+
+set_target_properties(py_engine3d PROPERTIES 
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# Link Python Module
+target_include_directories(py_engine3d PRIVATE src/ Headers/ Libraries/include CRenderExtensions)
+target_link_libraries(py_engine3d PRIVATE glad glfw OpenGL::GL Python3::Module)
+target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
+
+# ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 #           TARGET INCLUDE DIRECTORIES
 
 target_include_directories(${PROJECT_NAME} PRIVATE CRenderExtensions)
@@ -172,8 +172,8 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${Python3_INCLUDE_DIRS
 
 #           TARGET LINK DIRECTORIES
 
-target_link_directories(${PROJECT_NAME} PRIVATE "${Python3_ROOT_DIR}/libs")
-target_link_directories(py_engine3d PRIVATE "${Python3_ROOT_DIR}/libs")
+#target_link_directories(${PROJECT_NAME} PRIVATE "${Python3_ROOT_DIR}/libs")
+#target_link_directories(py_engine3d PRIVATE "${Python3_ROOT_DIR}/libs")
 
 #target_link_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Libraries/lib)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${GLFW_LIB} ${EXTRA_LIBS})
@@ -182,12 +182,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenGL::GL
     TinyTIFF
     ${CMAKE_DL_LIBS}
-    ${Python3_LIBRARIES}
+    Python3::Python
     pybind11::headers
     #pybind11::embed
 )
 
-target_link_libraries(py_engine3d PRIVATE ${Python3_LIBRARIES})
+#target_link_libraries(py_engine3d PRIVATE ${Python3_LIBRARIES})
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE Py_GIL_USED=1)
 target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
