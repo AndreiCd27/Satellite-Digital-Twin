@@ -1,0 +1,120 @@
+name: C++ CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: Build type
+        required: false
+        default: 'Debug'
+        type: choice
+        options: [Debug, Release, RelWithDebInfo, MinSizeRel]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      CC: ${{ matrix.c }}
+      CXX: ${{ matrix.cxx }}
+      BUILD_TYPE: ${{ github.event.inputs.build_type || 'Debug' }}
+      EXECUTABLE_NAME: "oop"
+      INPUT_FILENAME: "tastatura.txt"
+      BUILD_DIR: "build"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            c: clang-18
+            cxx: clang++-18
+            name: Ubuntu 24.04 Clang 18
+            cmake_flags: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+          - os: ubuntu-24.04
+            c: gcc-13
+            cxx: g++-13
+            name: Ubuntu 24.04 GCC 13
+            cmake_flags: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+          - os: macos-14
+            c: clang
+            cxx: clang++
+            name: macOS 14 Apple Clang (M1)
+
+          - os: windows-2022
+            c: cl
+            cxx: cl
+            name: Windows 2022 MSVC
+
+          - os: windows-2022
+            c: gcc
+            cxx: g++
+            name: Windows 2022 MinGW
+            cmake_generator: Ninja
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Prepare env
+        run: |
+          mkdir -p artifacts
+          if [ ! -f "${INPUT_FILENAME}" ]; then touch "${INPUT_FILENAME}"; fi
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build valgrind cppcheck jq \
+                                 libc++-18-dev libc++abi-18-dev
+
+      - name: Build & Install
+        run: |
+          cmake -S . -B "${BUILD_DIR}" \
+            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            -DCMAKE_INSTALL_PREFIX=./artifacts \
+            ${{ matrix.cmake_flags }} \
+            ${{ matrix.cmake_generator && format('-G "{0}"', matrix.cmake_generator) || '' }}
+          
+          cmake --build "${BUILD_DIR}" --config ${BUILD_TYPE} -j $(nproc 2>/dev/null || sysctl -n hw.ncpu)
+          cmake --install "${BUILD_DIR}" --config ${BUILD_TYPE}
+
+      - name: Memory Check (Valgrind on GCC)
+        # Only run Valgrind if we are on Linux and using G++ (no ASan conflict)
+        if: runner.os == 'Linux' && startsWith(matrix.cxx, 'g++')
+        run: |
+          valgrind --leak-check=full --error-exitcode=1 ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
+
+      - name: Memory Check (ASan on Clang)
+        # Only run the binary directly if using Clang (ASan is compiled in)
+        if: runner.os == 'Linux' && startsWith(matrix.cxx, 'clang++')
+        run: |
+          ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
+
+      - name: Static Analysis (Cppcheck)
+        if: runner.os == 'Linux'
+        run: |
+          cppcheck --enable=all --project="${BUILD_DIR}"/compile_commands.json \
+            --suppress=missingIncludeSystem --error-exitcode=1
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}_${{ matrix.os_name || matrix.os }}_${{ matrix.cxx }}
+          path: artifacts/
+          retention-days: 5
