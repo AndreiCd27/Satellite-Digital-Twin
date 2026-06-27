@@ -4,6 +4,7 @@
 
 #include "shaderClass.h"
 #include "GeometryBasics.h"
+#include <chrono>
 
 // Here we store our view and projection matrix and we forward it to Main.cpp
 // Such that we only store the resulting matrix for each instance,
@@ -16,6 +17,8 @@ struct Mat4Pair {
 class Camera
 {
 public:
+	static bool StopMotion;
+	std::chrono::steady_clock::time_point tstop;
 	// Stores the main vectors of the camera
 	AVector3 Position;
 	AVector3 Rotation = {0.0f, 0.0f, -1.0f};

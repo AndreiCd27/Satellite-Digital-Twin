@@ -13,6 +13,17 @@
 
 class SHLM;
 
+struct TMY_DATA {
+	std::vector<float> ghi;
+	std::vector<float> dni;
+	std::vector<float> dhi;
+	std::vector<float> temp;
+
+	std::vector<float> sun_x;
+	std::vector<float> sun_y;
+	std::vector<float> sun_z;
+};
+
 #define voidcast(x) reinterpret_cast<void*>(x)
 
 // SINGLETON ENGINE3D
@@ -29,7 +40,6 @@ private:
 	ShadowSampler depthTextureObject;
 
 	// Shader
-	Shader shaderProgram;
 	Shader instanceProgram;
 	Shader shadowProgram;
 	VAO VAO_1;
@@ -37,6 +47,8 @@ private:
 	EBO EBO_1;
 
 	Window window;
+
+	int totalIndices = 0;
 
 	// Appearance
 	struct {
@@ -66,9 +78,21 @@ private:
 
 	EngineConfig cfg;
 
+	// For debugging textures
+	Shader DebugTexShader;
+	GLuint emptyVAO;
+
 public:
 
 	bool DEBUG = false;
+	static bool DEBUG_TEXTURE;
+	static Texture* debug_texture_target;
+	static float DEBUG_TEXTURE_SCALAR;
+	static int DEBUG_TEXTURE_CHANNELS;
+
+	static TMY_DATA tmy_data;
+	//static void StoreTMY(Texture* tex);
+	int render_t = -1;
 
 	static Engine3D* GetEngine3D();
 	static void EngineTerminate();
@@ -83,6 +107,7 @@ public:
 
 	void setCamera(float posX, float posY, float posZ);
 	void setSunCamera(float posX, float posY, float posZ);
+	void setSunAzimuthAndElevation(float azimuth, float elevation, float R = 100.0f);
 
 	void setCamera(float posX, float posY, float posZ, float yaw, float pitch);
 
@@ -107,7 +132,7 @@ public:
 	
 	//OTHERS
 
-	void initGameFrame(float timeOfDay);
+	void initGameFrame();
 
 	void shadowPass();
 
@@ -117,12 +142,17 @@ public:
 
 	void DrawAll();
 
-	void Render(float timeOfDay);
+	void Render();
 
 	EngineConfig* getCFG() { return &cfg; }
 
 	void DEBUG_showCameraVectors();
 	void DEBUG_ArrayOrganizers();
+	void RenderDebugTexture(const Texture& texToDebug);
+
+	GLuint GetVBO_ID() { return VBO_1.GetID(); };
+
+	bool SunFromTMY(int t);
 
 	friend class SHLM;
 };

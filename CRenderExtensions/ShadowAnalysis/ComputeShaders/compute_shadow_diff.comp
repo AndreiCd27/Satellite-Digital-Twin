@@ -1,0 +1,50 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Shadow Mask
+layout(binding = 0) uniform sampler2D shadow_mask;
+
+// Raymarched shadow mask
+layout(binding = 1) uniform sampler2D sim_shadow_mask;
+
+// Diff image
+layout(binding = 3, rg8) uniform writeonly image2D diff_shadow_mask;
+
+// Difference/Loss Buffer
+layout(std430, binding = 2) buffer CounterBuffer {
+    uint InterCnt;
+    uint UnionCnt;
+};
+
+void main() {
+    ivec2 size = textureSize(shadow_mask, 0);
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    
+    if (pixelCoord.x >= size.x || pixelCoord.y >= size.y) return;
+
+    float shadowVal = texelFetch(shadow_mask, pixelCoord, 0).r;
+    float simShadowVal = texelFetch(sim_shadow_mask, pixelCoord, 0).r;
+    
+    bool isRealShadow = (shadowVal > 0.01);
+    bool isSimShadow  = (simShadowVal > 0.01);
+
+    vec4 DiffColor = vec4(0.0, 0.0, 0.0, 0.0);
+
+    // Variables are incremented for IoU
+
+    // Intersection
+    if (isRealShadow && isSimShadow) {
+        atomicAdd(InterCnt, 1);
+        
+        DiffColor = vec4(0.0,1.0,0.0,0.0);
+    } else if (isRealShadow || isSimShadow) {
+        DiffColor = vec4(1.0, 0.0, 0.0, 0.0);
+    }
+
+    // Union
+    if (isRealShadow || isSimShadow) {
+        atomicAdd(UnionCnt, 1);
+    }
+
+    imageStore(diff_shadow_mask, pixelCoord, DiffColor);
+}

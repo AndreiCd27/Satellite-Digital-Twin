@@ -88,7 +88,18 @@ void Camera::Inputs(GLFWwindow* window, float msPerFrame)
 	if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) Position += Up * -speed * msInc;
 	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) Position += Up * speed * msInc;
 
+	if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
+		auto t = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double, std::milli> duration = t - tstop;
+		if (duration.count() > 1000.0f) {
+			tstop = t;
+			StopMotion = not StopMotion;
+		}
+	}
+
 	// Avoid camera rolling
 	if (Pitch > 89.0f) Pitch = 89.0f;
 	if (Pitch < -89.0f) Pitch = -89.0f;
 }
+
+bool Camera::StopMotion = false;

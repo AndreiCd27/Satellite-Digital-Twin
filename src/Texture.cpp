@@ -13,6 +13,12 @@ void Texture::GenTex2D() {
 	glGenTextures(1, &TexID);
 	glBindTexture(GL_TEXTURE_2D, TexID);
 }
+void Texture::GenTex2D(int w, int h) {
+
+	glGenTextures(1, &TexID);
+	glBindTexture(GL_TEXTURE_2D, TexID);
+	width = w; height = h;
+}
 
 void Texture::MinMagFilter(GLenum MIN_FILTER, GLenum MAX_FILTER) const {
 
@@ -26,13 +32,34 @@ void Texture::WrapFilter(GLenum WRAP_S, GLenum WRAP_T) const {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, WRAP_T);
 }
 
-void Texture::CreateTex2D(GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR) const {
+void Texture::CreateTex2D(GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR) {
 
+	m_format = Format;
+	m_internalFormat = InternalFormat;
 	glTexImage2D(GL_TEXTURE_2D, 0, InternalFormat, width, height, 0, Format, type, dataPTR);
 }
+void Texture::CreateTex2D(int w, int h, GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR) {
+	width = w;
+	height = h;
+	m_format = Format;
+	m_internalFormat = InternalFormat;
+	glTexImage2D(GL_TEXTURE_2D, 0, InternalFormat, w, h, 0, Format, type, dataPTR);
+}
+void Texture::CreateStorageTex2D(int w, int h, GLint InternalFormat) {
+	width = w;
+	height = h;
+	m_internalFormat = InternalFormat;
+
+	m_format = GL_RED;
+
+	glTexStorage2D(GL_TEXTURE_2D, 1, InternalFormat, w, h);
+}
+
 
 void Texture::SetupTexture(GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR) {
 	GenTex2D();
+	m_format = Format;
+	m_internalFormat = InternalFormat;
 	CreateTex2D(InternalFormat, Format, type, dataPTR);
 }
 
@@ -40,6 +67,8 @@ void Texture::SetupTexture(GLint InternalFormat, GLenum Format, GLenum type,
 	GLenum MIN_FILTER, GLenum MAG_FILTER, void* dataPTR) {
 
 	GenTex2D();
+	m_format = Format;
+	m_internalFormat = InternalFormat;
 
 	MinMagFilter(MIN_FILTER, MAG_FILTER);
 
@@ -51,6 +80,8 @@ void Texture::SetupTexture(GLint InternalFormat, GLenum Format, GLenum type,
 	GLenum MIN_FILTER, GLenum MAG_FILTER, GLenum WRAP_S, GLenum WRAP_T, void* dataPTR) {
 
 	GenTex2D();
+	m_format = Format;
+	m_internalFormat = InternalFormat;
 
 	MinMagFilter(MIN_FILTER, MAG_FILTER);
 	WrapFilter(WRAP_S, WRAP_T);
@@ -59,8 +90,12 @@ void Texture::SetupTexture(GLint InternalFormat, GLenum Format, GLenum type,
 
 }
 
+void Texture::BindImage(unsigned int unit, unsigned int access) const {
+	glBindImageTexture(unit, this->TexID, 0, GL_FALSE, 0, access, m_internalFormat);
+}
+
 void ShadowSampler::setupFBO() {
-	std::cout << "Setup FBO \n";
+	//std::cout << "Setup FBO \n";
 
 	GLuint FramebufferName = 0;
 	glGenFramebuffers(1, &FramebufferName);

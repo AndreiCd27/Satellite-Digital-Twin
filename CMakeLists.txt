@@ -73,6 +73,13 @@ add_library(glad src/glad.c)
 target_sources(glad PRIVATE )
 target_include_directories(glad PUBLIC Libraries/include)
 
+file(GLOB IMGUI_SOURCES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/Libraries/lib/imgui/*.cpp"
+)
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Libraries/include/imgui")
+target_include_directories(imgui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Libraries/include")
+
 find_package(OpenGL REQUIRED)
 #find_package(glfw3 REQUIRED)
 
@@ -87,18 +94,18 @@ file(GLOB_RECURSE EXTENSION_HEADERS CONFIGURE_DEPENDS "CRenderExtensions/*.h")
 
 #           HEADER FILES
 
-set(HEADER_FILES 
-    Headers/Engine3D.h 
-    Headers/Camera.h 
-    Headers/Scene.h 
-     
+set(HEADER_FILES
+    Headers/Engine3D.h
+    Headers/Camera.h
+    Headers/Scene.h
     
-    Headers/GeometryBasics.h 
-    Headers/Texture.h 
-     
-    Headers/VBO.h 
-    Headers/EBO.h 
-    Headers/VAO.h 
+    
+    Headers/GeometryBasics.h
+    Headers/Texture.h
+    
+    Headers/VBO.h
+    Headers/EBO.h
+    Headers/VAO.h
     Headers/shaderClass.h
     
     Headers/Window.h
@@ -108,27 +115,31 @@ set(HEADER_FILES
 
     Headers/Mutex.h
     Headers/Bindings.h
+
+    Headers/GUI.h
 )
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #           SOURCE FILES
 
-add_executable(${PROJECT_NAME} src/Main.cpp 
-    src/Engine3D.cpp src/Camera.cpp 
+add_executable(${PROJECT_NAME} src/Main.cpp
+    src/Engine3D.cpp src/Camera.cpp
     src/Scene.cpp
-    src/GeometryBasics.cpp 
-    src/Texture.cpp 
-    src/VBO.cpp src/EBO.cpp src/VAO.cpp 
+    src/GeometryBasics.cpp
+    src/Texture.cpp
+    src/VBO.cpp src/EBO.cpp src/VAO.cpp
     src/shaderClass.cpp
     
     src/Window.cpp
     src/ComputeShader.cpp
 
-    src/Bindings.cpp
     ${HEADER_FILES}
     ${EXTENSION_HEADERS}
     ${EXTENSION_SOURCES}
+    
+    src/Bindings.cpp
+    src/GUI.cpp
 )
 
 
@@ -145,7 +156,7 @@ set_target_properties(py_engine3d PROPERTIES
 
 # Link Python Module
 target_include_directories(py_engine3d PRIVATE src/ Headers/ Libraries/include CRenderExtensions)
-target_link_libraries(py_engine3d PRIVATE glad glfw OpenGL::GL Python3::Module)
+target_link_libraries(py_engine3d PRIVATE glad ${GLFW_LIB} OpenGL::GL Python3::Module)
 target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -157,6 +168,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE Headers)
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include)
 target_include_directories(${PROJECT_NAME} PRIVATE Libraries/include/TinyTIFF)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF)
+target_include_directories(${PROJECT_NAME} PRIVATE Libraries/include/imgui)
+
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
     "CRenderExtensions/Lighting/Headers"
@@ -177,10 +190,12 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${Python3_INCLUDE_DIRS
 
 #target_link_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Libraries/lib)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${GLFW_LIB} ${EXTRA_LIBS})
+target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     glad
     OpenGL::GL
     TinyTIFF
+    imgui
     ${CMAKE_DL_LIBS}
     Python3::Python
     pybind11::headers
@@ -202,29 +217,60 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/Python DESTINATION ${CMAKE_CURRENT_BINARY_
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions/PythonWorker/path_manage.py DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/Python)
+
+#           CMAKE SYMBOLIC LINK TO TEST_IMAGES & OUTPUT_IMAGES DIRECTORY
+
+set(SRC_TEST_IMAGES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_images")
+set(BIN_TEST_IMAGES_DIR "${CMAKE_CURRENT_BINARY_DIR}/test_images")
+
+set(SRC_OUT_IMAGES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/output_images")
+set(BIN_OUT_IMAGES_DIR "${CMAKE_CURRENT_BINARY_DIR}/output_images")
+
+# Symlink to test_images
+if(EXISTS "${SRC_TEST_IMAGES_DIR}")
+    if(NOT EXISTS "${BIN_TEST_IMAGES_DIR}")
+        if(WIN32)
+            file(TO_NATIVE_PATH "${SRC_TEST_IMAGES_DIR}" SRC_TEST_NATIVE)
+            file(TO_NATIVE_PATH "${BIN_TEST_IMAGES_DIR}" BIN_TEST_NATIVE)
+            execute_process(
+                COMMAND cmd /c mklink /j "${BIN_TEST_NATIVE}" "${SRC_TEST_NATIVE}"
+                RESULT_VARIABLE TEST_LINK_RESULT
+                OUTPUT_QUIET ERROR_QUIET
+            )
+        else()
+            file(CREATE_LINK "${SRC_TEST_IMAGES_DIR}" "${BIN_TEST_IMAGES_DIR}" SYMBOLIC)
+        endif()
+    endif()
+else()
+    message(WARNING "[CMake Warning] Directory test_images does not exist at: ${SRC_TEST_IMAGES_DIR}")
+endif()
+
+# Symlink to output_images
+if(NOT EXISTS "${SRC_OUT_IMAGES_DIR}")
+    file(MAKE_DIRECTORY "${SRC_OUT_IMAGES_DIR}")
+endif()
+
+if(NOT EXISTS "${BIN_OUT_IMAGES_DIR}")
+    if(WIN32)
+        file(TO_NATIVE_PATH "${SRC_OUT_IMAGES_DIR}" SRC_OUT_NATIVE)
+        file(TO_NATIVE_PATH "${BIN_OUT_IMAGES_DIR}" BIN_OUT_NATIVE)
+        execute_process(
+            COMMAND cmd /c mklink /j "${BIN_OUT_NATIVE}" "${SRC_OUT_NATIVE}"
+            RESULT_VARIABLE OUT_LINK_RESULT
+            OUTPUT_QUIET ERROR_QUIET
+        )
+    else()
+        file(CREATE_LINK "${SRC_OUT_IMAGES_DIR}" "${BIN_OUT_IMAGES_DIR}" SYMBOLIC)
+    endif()
+endif()
+
 # Python DLLs for Windows...
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "$<TARGET_FILE:Python3::Python>"
     "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 )
-
-#        OPTIONAL: AUTOMATIC PYTHON PDB COPY FOR CLEAN MSVC DEBUGGING
-if(MSVC)
-    # Target the local PDB file you saved in your project resources
-    set(LOCAL_PYTHON_PDB "${CMAKE_CURRENT_SOURCE_DIR}/Python/python313t.pdb")
-
-    # If the file exists locally, copy it to the executable folder after each build
-    if(EXISTS "${LOCAL_PYTHON_PDB}")
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${LOCAL_PYTHON_PDB}"
-            "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-        )
-        message(STATUS "[MSVC Debug Setup] Python PDB copy automation enabled.")
-    endif()
-endif()
-
 
 #GITHUB ACTIONS
 

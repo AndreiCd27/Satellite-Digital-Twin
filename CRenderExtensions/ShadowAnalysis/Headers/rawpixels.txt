@@ -1,0 +1,267 @@
+
+enum class PIXEL_FORMAT { RGBA, RGB, RG, R, R32F };
+
+class RawPixels : public Texture {
+private:
+    PIXEL_FORMAT m_format;
+
+    // GL format mapping
+    GLint GetGLInternalFormat(PIXEL_FORMAT format) const {
+        switch (format) {
+        case PIXEL_FORMAT::RGBA: return GL_RGBA8;
+        case PIXEL_FORMAT::RGB:  return GL_RGB8;
+        case PIXEL_FORMAT::RG:   return GL_RG8;
+        case PIXEL_FORMAT::R:    return GL_R8;
+        case PIXEL_FORMAT::R32F: return GL_R32F;
+        }
+        return GL_R8;
+    }
+
+    GLenum GetGLFormat(PIXEL_FORMAT format) const {
+        switch (format) {
+        case PIXEL_FORMAT::RGBA: return GL_RGBA;
+        case PIXEL_FORMAT::RGB:  return GL_RGB;
+        case PIXEL_FORMAT::RG:   return GL_RG;
+        case PIXEL_FORMAT::R:    return GL_RED;
+        case PIXEL_FORMAT::R32F: return GL_R32F;
+        }
+        return GL_RED;
+    }
+
+public:
+    RawPixels(std::vector<unsigned char>& sourcePixels, PIXEL_FORMAT f, int w, int h)
+        : m_format(f)
+    {
+        this->width = w;
+        this->height = h;
+
+        if (sourcePixels.empty()) return;
+
+        SetupTexture(
+            GetGLInternalFormat(m_format),
+            GetGLFormat(m_format),
+            GL_UNSIGNED_BYTE,
+            GL_NEAREST, GL_NEAREST,
+            GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE,
+            sourcePixels.data()
+        );
+
+        // Clear pixels from RAM
+        sourcePixels.clear();
+        sourcePixels.shrink_to_fit();
+    }
+
+    RawPixels(PIXEL_FORMAT f, int w, int h)
+        : m_format(f)
+    {
+        this->width = w;
+        this->height = h;
+
+        // Allocate Empty Texture
+        SetupTexture(
+            GetGLInternalFormat(m_format),
+            GetGLFormat(m_format),
+            GL_UNSIGNED_BYTE,
+            GL_NEAREST, GL_NEAREST,
+            GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE,
+            nullptr
+        );
+    }
+
+    ~RawPixels() {
+        Delete();
+    }
+
+    // GPU objects are unique, we have to use move semantics
+    RawPixels(RawPixels&& other) noexcept
+        : m_format(other.m_format)
+    {
+        // Move attributes
+        this->TexID = other.TexID;
+        this->width = other.width;
+        this->height = other.height;
+
+        // Reset other texture state
+        other.TexID = 0;
+        other.width = 0;
+        other.height = 0;
+    }
+
+    RawPixels& operator=(RawPixels&& other) noexcept {
+        if (this != &other) {
+            // Delete OpenGL resource before creating a new one
+            Delete();
+
+            this->m_format = other.m_format;
+            this->TexID = other.TexID;
+            this->width = other.width;
+            this->height = other.height;
+
+            other.TexID = 0;
+            other.width = 0;
+            other.height = 0;
+        }
+        return *this;
+    }
+
+    RawPixels(const RawPixels&) = delete;
+    RawPixels& operator=(const RawPixels&) = delete;
+
+    // Method for Compute Shader Image Binding
+    void BindImage(unsigned int unit, unsigned int access) const {
+        glBindImageTexture(unit, this->TexID, 0, GL_FALSE, 0, access, GetGLInternalFormat(m_format));
+    }
+
+    PIXEL_FORMAT GetPixelFormat() const { return m_format; }
+};
+
+
+
+class SAnalysis {
+public:
+    const RawPixels rawImage;
+    const RawPixels maskImage;
+
+    SAnalysis() : rawImage(PIXEL_FORMAT::R, 0, 0), maskImage(PIXEL_FORMAT::R, 0, 0) {}
+    SAnalysis(std::vector<unsigned char>& pixels_0, PIXEL_FORMAT f_0, int w_0, int h_0,
+        std::vector<unsigned char>& pixels_1, PIXEL_FORMAT f_1, int w_1, int h_1)
+        : rawImage(pixels_0, f_0, w_0, h_0), maskImage(pixels_1, f_1, w_1, h_1) {
+        // Creates an ShadowAnalysis on a raw image (given in pixels_0) and a mask image (given in pixels_1)
+    }
+    void BindRawImage(unsigned int unit, unsigned int access) const {
+        rawImage.BindImage(unit, access);
+    }
+    void BindMaskImage(unsigned int unit, unsigned int access) const {
+        maskImage.BindImage(unit, access);
+    }
+};
+
+class SatelliteAnalyzer {
+    
+    // .......................
+    // .......................
+    // .......................
+
+    
+    void VisualizeAnalysis(const AnalysisResult& a, Window* window) {
+        visualizeShader.Activate();
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, a.shadow_mask->GetTexID());
+        visualizeShader.SetInt("u_shadowMaskTex", 0);
+
+        const float quadVertices[] = {
+            -1.0f,  1.0f,  0.0f, 1.0f,
+            -1.0f, -1.0f,  0.0f, 0.0f,
+             1.0f, -1.0f,  1.0f, 0.0f,
+
+            -1.0f,  1.0f,  0.0f, 1.0f,
+             1.0f, -1.0f,  1.0f, 0.0f,
+             1.0f,  1.0f,  1.0f, 1.0f
+        };
+
+        VAO vao;
+        vao.Setup();
+        vao.Bind();
+
+        VBO vbo;
+        vbo.SetupFloatPTR(quadVertices, sizeof(quadVertices));
+
+        vao.LinkVBO(vbo, 0, 2, GL_FLOAT, 4 * sizeof(float), GL_FALSE, (void*)0);
+
+        vao.LinkVBO(vbo, 1, 2, GL_FLOAT, 4 * sizeof(float), GL_FALSE, (void*)(2 * sizeof(float)));
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        vao.Unbind();
+        vbo.Delete();
+        vao.Delete();
+
+        glfwSwapBuffers(window->getWindow());
+
+    }
+    void SaveShadowMaskToDisk(const RawPixels& mask, const std::string& filename) {
+        int w = mask.GetWidth();
+        int h = mask.GetHeight();
+        if (w <= 0 || h <= 0) return;
+
+        std::vector<unsigned char> monoPixels(w * h, 0);
+        glBindTexture(GL_TEXTURE_2D, mask.GetTexID());
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, monoPixels.data());
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        std::vector<unsigned char> processedPixels(w * h, 255);
+
+        for (int y = 1; y < h - 1; y++) {
+            for (int x = 1; x < w - 1; x++) {
+                int idx = y * w + x;
+
+                if (monoPixels[idx] > 128) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            int targetIdx = (y + dy) * w + (x + dx);
+                            processedPixels[targetIdx] = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        stbi_write_png(filename.c_str(), w, h, 1, processedPixels.data(), w * 1);
+
+        std::cout << "[DISK] Shadow mask from analysis saved successfully: " << filename << "\n";
+    }
+    void SaveHeightmapToDisk(const RawPixels& heightmap, const std::string& filename, float elevation) {
+        int w = heightmap.GetWidth();
+        int h = heightmap.GetHeight();
+        if (w <= 0 || h <= 0) return;
+
+        std::vector<unsigned char> rawHeights(w * h, 0);
+        glBindTexture(GL_TEXTURE_2D, heightmap.GetTexID());
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, rawHeights.data());
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        std::vector<unsigned char> metricHeights(w * h, 0);
+
+        const float metersPerPixel = 0.5f;
+        const int distanceThreshold = 40;
+
+        const float grayscaleUnitsPerMeter = 10.0f;
+
+        float maxDetectedMeters = 0.0f;
+
+        for (int i = 0; i < w * h; i++) {
+            if (rawHeights[i] > 0) {
+                float shadowLengthInPixels = ((float)rawHeights[i] / 255.0f) * (float)distanceThreshold;
+
+                float shadowLengthInMeters = shadowLengthInPixels * metersPerPixel;
+
+                float heightInMeters = shadowLengthInMeters * std::tan(elevation);
+
+                if (heightInMeters > maxDetectedMeters) {
+                    maxDetectedMeters = heightInMeters;
+                }
+
+                // Grayscale
+                float finalGrayscale = heightInMeters * grayscaleUnitsPerMeter;
+
+                metricHeights[i] = (unsigned char)(finalGrayscale > 255.0f ? 255.0f : finalGrayscale);
+            }
+            else {
+                metricHeights[i] = 0;
+            }
+        }
+
+        std::cout << "[METRIC] Highest building: " << maxDetectedMeters << " meters\n";
+
+        stbi_write_png(filename.c_str(), w, h, 1, metricHeights.data(), w * 1);
+
+        std::cout << "[DISK] Building Heightmap from analysis saved successfully: " << filename << "\n";
+    }
+
+
+}

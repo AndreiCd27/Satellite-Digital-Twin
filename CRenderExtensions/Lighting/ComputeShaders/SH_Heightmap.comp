@@ -1,0 +1,133 @@
+#version 430 core
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(rgba16f, binding = 0) uniform writeonly image2D surfaceSH0;
+layout(rgba16f, binding = 1) uniform writeonly image2D surfaceSH1;
+layout(rgba16f, binding = 2) uniform writeonly image2D surfaceSH2;
+layout(rgba16f, binding = 3) uniform writeonly image2D surfaceSH3;
+
+layout(binding = 4) uniform sampler2D uHeightmap;
+
+uniform vec3 worldMin;
+uniform vec3 worldMax;
+uniform ivec3 gridRes;
+
+const float PI = 3.14159265359;
+const float EPSILON = 0.00001;
+
+// Standard SH Constants for Bands 0, 1, 2, 3 (Zonal Harmonics Evaluations)
+const float Y00 = 0.28209479; // sqrt(1 / 4PI);
+const float Y10 = 0.48860251; // sqrt(3 / 4PI);
+const float Y20 = 0.31539157; // sqrt(5 / 16PI);
+const float Y30 = 0.37317633; // sqrt(7 / 16PI);
+
+vec4 ComputeWedgeLinearZH(float sigma) {
+    float cosS = cos(sigma);
+    float sinS = sin(sigma);
+
+    vec4 zh;
+    // Standard analytic projection formulas for a cone pointing straight up (Z-axis / Height-axis)
+    zh.x = Y00 * (1.0 - cosS);
+    zh.y = Y10 * 0.5 * (sinS * sinS);
+    zh.z = Y20 * 0.5 * cosS * (sinS * sinS);
+    zh.w = Y30 * (1.0 / 8.0) * (1.0 - cosS) * (1.0 + cosS) * (3.0 * cosS * cosS - 1.0); // Simple proxy approximation for Band 3 ZH
+
+    return zh;
+}
+
+// Rotates the Zonal Harmonics to the azimuth direction 'phi' using standard SH Real Basis math
+void RotateZHtoLinearSH(vec4 zh, float phi, inout vec4 finalSH[4]) {
+    float c1 = cos(phi);     float s1 = sin(phi);
+    float c2 = cos(2.0*phi); float s2 = sin(2.0*phi);
+    float c3 = cos(3.0*phi); float s3 = sin(3.0*phi);
+
+    // Band 0
+    finalSH[0].x += zh.x;
+    
+    // Band 1
+    finalSH[0].y += zh.y * c1;
+    finalSH[0].z += zh.y;
+    finalSH[0].w += zh.y * s1;
+    
+    // Band 2
+    finalSH[1].x += zh.z * c2;
+    finalSH[1].y += zh.z * s2;
+    finalSH[1].z += zh.z * c1;
+    finalSH[1].w += zh.z * s1;
+    
+    // Band 3
+    finalSH[2].x += zh.w * c3;
+    finalSH[2].y += zh.w * s3;
+    finalSH[2].z += zh.w * c2;
+    finalSH[2].w += zh.w * s2;
+    
+    finalSH[3].x += zh.w * c1;
+    finalSH[3].y += zh.w * s1;
+    finalSH[3].z += zh.w;
+    finalSH[3].w += 0.0;
+}
+
+float GetUnifiedWorldHeight(vec2 uv) {
+    vec2 clr = texture(uHeightmap, uv).rg;
+    return clr.r + clr.g;
+}
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= gridRes.x || pixelCoord.y >= gridRes.z) return;
+
+    vec2 uv = vec2(pixelCoord) / vec2(float(gridRes.x - 1), float(gridRes.z - 1));
+    vec3 worldSize = worldMax - worldMin;
+
+    float currentSurfaceWorldHeight = GetUnifiedWorldHeight(uv) + 0.05; // Small clean world bias
+
+    vec4 finalSH[4];
+    finalSH[0] = vec4(0.0); finalSH[1] = vec4(0.0);
+    finalSH[2] = vec4(0.0); finalSH[3] = vec4(0.0);
+
+    const int W = 16;
+    const float deltaPhi = (2.0 * PI) / float(W);
+    
+    // Constant world step metric to prevent scaling distortions
+    float worldStepDist = 1.0; 
+    vec2 uvStepScale = vec2(worldStepDist / worldSize.x, worldStepDist / worldSize.z);
+
+    for (int k = 0; k < W; k++) {
+        float phi = float(k) * deltaPhi;
+        vec2 rayDir = vec2(cos(phi), sin(phi));
+
+        float maxSlope = 0.0; 
+        int maxSteps = 150; 
+
+        for (int step = 1; step <= maxSteps; step++) {
+            // Step uniformly in world meters, then scale to UV coordinates
+            vec2 uvOffset = rayDir * uvStepScale * float(step);
+            vec2 sampleUV = uv + uvOffset;
+
+            if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) break;
+
+            float neighborWorldHeight = GetUnifiedWorldHeight(sampleUV);
+            float distHorizontalReal = float(step) * worldStepDist;
+
+            float slope = (neighborWorldHeight - currentSurfaceWorldHeight) / distHorizontalReal;
+            maxSlope = max(maxSlope, slope);
+        }
+
+        // Calculate visibility horizon cone angle
+        float theta_b = atan(maxSlope);
+        float sigma = clamp((PI * 0.5) - theta_b, 0.0, PI * 0.5);
+
+        // Project directly to Linear Space Zonal Harmonics
+        vec4 wedgeZH = ComputeWedgeLinearZH(sigma);
+        
+        // Rotate and accumulate coefficients directly
+        RotateZHtoLinearSH(wedgeZH * deltaPhi, phi, finalSH);
+    }
+
+    // Save out purely un-corrupted linear values
+    imageStore(surfaceSH0, pixelCoord, finalSH[0]);
+    imageStore(surfaceSH1, pixelCoord, finalSH[1]);
+    imageStore(surfaceSH2, pixelCoord, finalSH[2]);
+    imageStore(surfaceSH3, pixelCoord, finalSH[3]);
+}

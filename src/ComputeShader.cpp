@@ -23,10 +23,16 @@ void ComputeShader::Setup(const char* computeFileName) {
 	// Link the shader into the Shader Program
 	glLinkProgram(ID);
 	// Checks if Shader linked succesfully
-	compileErrors(ID, "PROGRAM");
+	compileErrors(ID, "PROGRAM",tag);
 
 	// Delete the now useless Shader object
 	glDeleteShader(computeShader);
 
 	SetupComplete = true;
+}
+
+
+void ComputeShader::Setup(const char* computeFileName, std::string tag) {
+	this->tag = tag;
+	Setup(computeFileName);
 }

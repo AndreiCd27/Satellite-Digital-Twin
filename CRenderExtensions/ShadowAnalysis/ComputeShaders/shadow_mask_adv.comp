@@ -1,0 +1,146 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2D rawTex;
+layout(binding = 1) uniform sampler2D maskTex;
+
+layout(binding = 2, r8) writeonly uniform image2D shadowMaskTex;
+layout(binding = 3, r8) writeonly uniform image2D heightMapTex;
+
+uniform float ShadowAngle;
+uniform int DistanceThreshold = 30;
+uniform float ShadowThreshold = 0.35;
+
+vec2 GetRayStep(vec2 sunDir) {
+    vec2 absDir = abs(sunDir);
+    return (absDir.x > absDir.y) ? vec2(sign(sunDir.x), sunDir.y / absDir.x) : vec2(sunDir.x / absDir.y, sign(sunDir.y));
+}
+
+bool IsPixelShadowed(ivec2 samplePos, ivec2 size, vec2 rayStep, inout float minLuminance) {
+    if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) return false;
+    if (texelFetch(maskTex, samplePos, 0).r > 0.9) return false;
+
+    bool hitBuilding = false;
+    vec2 currentRayPos = vec2(samplePos);
+
+    for (int step = 1; step <= DistanceThreshold; step++) {
+        currentRayPos += rayStep;
+        ivec2 rayPos = ivec2(round(currentRayPos));
+
+        if (rayPos.x < 0 || rayPos.x >= size.x || rayPos.y < 0 || rayPos.y >= size.y) break;
+
+        if (texelFetch(maskTex, rayPos, 0).r > 0.9) {
+            hitBuilding = true;
+            break; 
+        }
+    }
+
+    vec3 rgb_ground = texelFetch(rawTex, samplePos, 0).rgb;
+    float luminance = dot(rgb_ground, vec3(0.299, 0.587, 0.114));
+
+    if (luminance < minLuminance) {
+        minLuminance = luminance;
+    }
+
+    return (hitBuilding && luminance < ShadowThreshold);
+}
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(maskTex, 0);
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    float isBuilding = texelFetch(maskTex, pos, 0).r;
+    vec2 sunDir = vec2(cos(ShadowAngle), sin(ShadowAngle));
+
+    if (isBuilding < 0.9) {
+        // CASE 1: ground pixel ////////////////////////////////
+        imageStore(heightMapTex, pos, vec4(0.0));
+        vec2 rayStep = GetRayStep(sunDir);
+
+        bool anyShadow = false;
+
+        float minLuminance = 1.0;
+
+        // Check a 3x3 window
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                ivec2 neighborPos = pos + ivec2(dx, dy);
+                if (IsPixelShadowed(neighborPos, size, rayStep, minLuminance)) {
+                    anyShadow = true; 
+                    break; // Found shadow in pixel vecinity
+                }
+            }
+            if (anyShadow) break;
+        }
+
+        if (anyShadow) {
+            float shadowIntensity = clamp(1.0 - 0.75 * minLuminance / ShadowThreshold, 0.0, 1.0);
+            imageStore(shadowMaskTex, pos, vec4(shadowIntensity)); 
+        } else {
+            imageStore(shadowMaskTex, pos, vec4(0.0));
+        }
+
+    } else {
+        // CASE 2: building pixel //////////////////////////////
+        float shadowMaskVal = 0.0;
+        
+        bool onBuildingEdge = false;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                ivec2 samplePos = pos + ivec2(dx,dy);
+                if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) break;
+                if (texelFetch(maskTex, samplePos, 0).r < 0.5) {
+                    onBuildingEdge = true;
+                    break;
+                }
+            }
+        }
+        
+        if (onBuildingEdge) {
+            vec2 sunDirOpp = -sunDir;
+            vec2 rayStep = GetRayStep(sunDirOpp);
+
+            bool shadowEnd = false;
+            ivec2 lastShadowPixel = pos;
+            vec2 currentRayPos = vec2(pos);
+
+            float minLuminance = 1.0;
+
+            for (int step = 1; step <= DistanceThreshold; step++) {
+                currentRayPos += rayStep;
+                ivec2 samplePos = ivec2(round(currentRayPos));
+
+                if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) break;
+
+                vec3 rgb_ground = texelFetch(rawTex, samplePos, 0).rgb;
+                float luminance = dot(rgb_ground, vec3(0.299, 0.587, 0.114));
+
+                if (luminance > ShadowThreshold) {
+                    shadowEnd = true;
+                    lastShadowPixel = samplePos;
+                    break; 
+                }
+                if (luminance < minLuminance) {
+                    minLuminance = luminance;
+                }
+            }
+            
+            float shadowIntensity = clamp(1.0 - 0.75 * minLuminance / ShadowThreshold, 0.0, 1.0);
+
+            vec2 dshadow = vec2(pos - lastShadowPixel);
+            float shadowLength = length(dshadow);
+
+            imageStore(heightMapTex, pos, vec4(min(shadowLength / 255.0, 1.0)));
+
+            if (shadowLength > 0.001 && dot(normalize(dshadow), normalize(sunDirOpp)) > 0.5) {
+                shadowMaskVal = shadowIntensity;
+            } else {
+                shadowMaskVal = 0.0; // Wrong edge, not in shadow
+            }
+        } else {
+            imageStore(heightMapTex, pos, vec4(0.0));
+        }
+        imageStore(shadowMaskTex, pos, vec4(shadowMaskVal));
+    }
+}

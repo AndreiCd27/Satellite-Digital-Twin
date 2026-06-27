@@ -63,6 +63,33 @@ void AbstractShader::compileErrors(unsigned int shader, const char* type)
 	}
 }
 
+void AbstractShader::compileErrors(unsigned int shader, const char* type, std::string tag) {
+	// Stores status of compilation
+	GLint hasCompiled;
+	// Character array to store error message in
+	char infoLog[1024];
+	if (strcmp(type, "PROGRAM") != 0)
+	{
+		glGetShaderiv(shader, GL_COMPILE_STATUS, &hasCompiled);
+		if (hasCompiled == GL_FALSE)
+		{
+			glGetShaderInfoLog(shader, 1024, NULL, infoLog);
+			std::cout << "SHADER_COMPILATION_ERROR for:" << type << "\n" << infoLog << std::endl;
+			std::cout << "[SHADER] Compile ERROR for " << tag << "\n";
+		}
+	}
+	else
+	{
+		glGetProgramiv(shader, GL_LINK_STATUS, &hasCompiled);
+		if (hasCompiled == GL_FALSE)
+		{
+			glGetProgramInfoLog(shader, 1024, NULL, infoLog);
+			std::cout << "SHADER_LINKING_ERROR for:" << type << "\n" << infoLog << std::endl;
+			std::cout << "[SHADER] Compile ERROR for " << tag << "\n";
+		}
+	}
+}
+
 // Constructor that build the Shader Program from 2 different shaders
 void Shader::Setup(const char* vertexFile, const char* fragmentFile)
 {
@@ -143,9 +170,15 @@ void AbstractShader::SetUniformVec4Array(const std::string& uniformName, std::ve
 void AbstractShader::SetUniformVec4Array(const std::string& uniformName, float* F, int Fsize) {
 	glUniform4fv(GetUniformLocation(uniformName), (GLsizei)Fsize / 4, F);
 }
+void AbstractShader::SetUniformVec3Array(const std::string& uniformName, float* F, int Fsize) {
+	glUniform3fv(GetUniformLocation(uniformName), (GLsizei)Fsize, F);
+}
 
 void AbstractShader::SetInt(const std::string& uniformName, int val) {
 	glUniform1i(GetUniformLocation(uniformName), val);
+}
+void AbstractShader::SetUInt(const std::string& uniformName, unsigned int val) {
+	glUniform1ui(GetUniformLocation(uniformName), val);
 }
 void AbstractShader::SetFloat(const std::string& uniformName, float val) {
 	glUniform1f(GetUniformLocation(uniformName), val);

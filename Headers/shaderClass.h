@@ -28,6 +28,7 @@ public:
 	void Delete();
 	// Checks if the different Shaders have compiled properly
 	void compileErrors(unsigned int shader, const char* type);
+	void compileErrors(unsigned int shader, const char* type, std::string tag);
 
 	inline bool GetCompleteStatus() { return SetupComplete; }
 
@@ -41,7 +42,9 @@ public:
 	void SetUniformVector2(const std::string& uniformName, float x, float y);
 	void SetUniformVec4Array(const std::string& uniformName, std::vector<float> F);
 	void SetUniformVec4Array(const std::string& uniformName, float* F, int Fsize);
+	void SetUniformVec3Array(const std::string& uniformName, float* F, int Fsize);
 	void SetInt(const std::string& uniformName, int val);
+	void SetUInt(const std::string& uniformName, unsigned int val);
 	void SetFloat(const std::string& uniformName, float val);
 };
 

@@ -9,9 +9,10 @@
 
 class ComputeShader : public AbstractShader {
 private:
-
+	std::string tag = "No tag";
 public:
 	void Setup(const char* computeFileName);
+	void Setup(const char* computeFileName, std::string tag);
 
 	GLuint CreateSSBO() {
 		GLuint ssboID;
@@ -45,6 +46,15 @@ public:
 			std::fill_n(ptr, BufferSize, 0);
 			glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 		}
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	}
+	template <typename T>
+	void ClearSSBO(const int BufferSize, const GLuint SSBO_ID) {
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO_ID);
+
+		uint32_t zero = 0;
+		glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &zero);
+
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}
 };

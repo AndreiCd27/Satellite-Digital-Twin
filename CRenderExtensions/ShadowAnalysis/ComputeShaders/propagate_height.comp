@@ -1,40 +1,42 @@
 #version 430 core
 layout(local_size_x = 16, local_size_y = 16) in;
 
-// Original building mask
-layout(binding = 0, rgba8) uniform readonly image2D maskTex;
+layout(binding = 0) uniform sampler2D maskTex;
 
-// Heightmap
-layout(binding = 1, r8) uniform image2D heightMapTex;
+layout(binding = 1) uniform sampler2D srcHeightMapTex;
+
+layout(binding = 2, r8) uniform writeonly image2D heightMapTex;
 
 void main() {
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = imageSize(maskTex);
+    ivec2 size = textureSize(maskTex, 0);
     if (pos.x >= size.x || pos.y >= size.y) return;
 
-    // Propagate height just inside buildings
-    float isBuilding = imageLoad(maskTex, pos).r;
-    if (isBuilding < 0.5) return;
+    float isBuilding = texelFetch(maskTex, pos, 0).r;
+    if (isBuilding < 0.5) {
+        imageStore(heightMapTex, pos, vec4(0.0));
+        return;
+    }
 
-    float currentHeight = imageLoad(heightMapTex, pos).r;
-    if (currentHeight > 0.0) return;
+    float currentHeight = texelFetch(srcHeightMapTex, pos, 0).r;
 
-    float maxNeighborHeight = 0.0;
+    float floodHeight = currentHeight;
 
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
+    for (int dy = -2; dy <= 2; dy++) {
+        for (int dx = -2; dx <= 2; dx++) {
+            if (dx == 0 && dy == 0) continue; 
+
             ivec2 neighborPos = pos + ivec2(dx, dy);
             
             if (neighborPos.x >= 0 && neighborPos.x < size.x && neighborPos.y >= 0 && neighborPos.y < size.y) {
-                float neighborHeight = imageLoad(heightMapTex, neighborPos).r;
-                if (neighborHeight > maxNeighborHeight) {
-                    maxNeighborHeight = neighborHeight;
+                float neighborHeight = texelFetch(srcHeightMapTex, neighborPos, 0).r;
+                
+                if (neighborHeight > floodHeight) {
+                    floodHeight = neighborHeight;
                 }
             }
         }
     }
 
-    if (maxNeighborHeight > 0.0) {
-        imageStore(heightMapTex, pos, vec4(maxNeighborHeight));
-    }
+    imageStore(heightMapTex, pos, vec4(floodHeight));
 }

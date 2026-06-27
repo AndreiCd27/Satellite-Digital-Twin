@@ -28,4 +28,6 @@ public:
 	void Delete();
 
 	inline bool GetCompleteStatus() { return SetupComplete; }
+
+	GLuint GetID() const { return ID; };
 };

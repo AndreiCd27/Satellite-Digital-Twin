@@ -371,6 +371,32 @@ public:
 		outSH[15] = SHNorm[15] * z * (3.0f * x * x - z * z);
 	}
 
+	void GetLightBasisYUp2(float x, float y, float z, float* outSH) {
+		// L=0
+		outSH[0] = SHNorm[0];
+
+		// L=1
+		outSH[1] = SHNorm[1] * z;
+		outSH[2] = SHNorm[2] * y;
+		outSH[3] = SHNorm[3] * x;
+
+		// L=2
+		outSH[4] = SHNorm[4] * (x * z);
+		outSH[5] = SHNorm[5] * (z * y);
+		outSH[6] = SHNorm[6] * (3.0f * y * y - 1.0f);
+		outSH[7] = SHNorm[7] * (x * y);
+		outSH[8] = SHNorm[8] * (x * x - z * z);
+
+		// L=3
+		outSH[9] = SHNorm[9] * z * (3.0f * x * x - z * z);
+		outSH[10] = SHNorm[10] * (x * y * z);
+		outSH[11] = SHNorm[11] * z * (5.0f * y * y - 1.0f);
+		outSH[12] = SHNorm[12] * y * (5.0f * y * y - 3.0f);
+		outSH[13] = SHNorm[13] * x * (5.0f * y * y - 1.0f);
+		outSH[14] = SHNorm[14] * y * (x * x - z * z);
+		outSH[15] = SHNorm[15] * x * (x * x - 3.0f * z * z);
+	}
+
 	void ApplyFunkHeckeCosine(float* outSH, bool ApplyZH_Norm) {
 		// See Funk-Hecke theorem for computing the SH projection coefficients
 		// of a circularly-simetric (ZH) about an arbitrary direction d,
@@ -393,6 +419,31 @@ public:
 
 		// L = 3
 		for (int i = 9; i < 16; i++) outSH[i] *= ZHcosine[3] * conv[3];
+	}
+
+	void GetClearSkySH(float x, float y, float z, float DHI, float* outSH) {
+		// Evaluate the raw SH basis functions along the normalized sun vector
+		GetLightBasisYUp(x, y, z, outSH);
+
+		// Physical clear sky in ZH
+		const float clearSkyZH[4] = { 1.00f, 0.51f, 0.23f, 0.08f };
+
+		// Scale by DHI
+		float L0_scale = clearSkyZH[0] * ZHconv[0] * DHI;
+		float L1_scale = clearSkyZH[1] * ZHconv[1] * DHI;
+		float L2_scale = clearSkyZH[2] * ZHconv[2] * DHI;
+		float L3_scale = clearSkyZH[3] * ZHconv[3] * DHI;
+
+		// Apply the Funk-Hecke projection dynamically
+		// 
+		// Band 0 (L = 0)
+		outSH[0] *= L0_scale;
+		// Band 1 (L = 1)
+		for (int i = 1; i < 4; i++) outSH[i] *= L1_scale;
+		// Band 2 (L = 2)
+		for (int i = 4; i < 9; i++) outSH[i] *= L2_scale;
+		// Band 3 (L = 3)
+		for (int i = 9; i < 16; i++) outSH[i] *= L3_scale;
 	}
 
 

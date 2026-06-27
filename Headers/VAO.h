@@ -16,6 +16,7 @@ public:
 
 	void Setup();
 	void LinkVBO(VBO& VBO, GLuint layout, GLuint numComp, GLenum type, GLsizei stride, bool NORMALIZED, void* offset);
+	void LinkVBO_int(VBO& VBO, GLuint layout, GLuint numComp, GLenum type, GLsizei stride, void* offset);
 	void Bind();
 	void Unbind();
 	void Delete();

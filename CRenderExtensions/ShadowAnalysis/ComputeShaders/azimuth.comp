@@ -2,9 +2,9 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 
 // Satellite image input
-layout(binding = 0, rgba8) uniform readonly image2D rawTex;
+layout(binding = 0) uniform sampler2D rawTex;
 // Building mask image input
-layout(binding = 1, rgba8) uniform readonly image2D maskTex;
+layout(binding = 1) uniform sampler2D maskTex;
 
 #define NUM_DIRECTIONS 64
 
@@ -22,19 +22,18 @@ uniform float ShadowThreshold;
 
 void main() {
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = imageSize(maskTex);
+    ivec2 size = textureSize(maskTex, 0);
     if (pos.x >= size.x || pos.y >= size.y) return;
 
     // Process only pixels that are NOT buildings (according to our building mask)
-    float isBuilding = imageLoad(maskTex, pos).r;
+    float isBuilding = texelFetch(maskTex, pos, 0).r;
     if (isBuilding > 0.5) return;
 
     // Process only if pixel is dark (likely shadow)
-    vec3 rgb = imageLoad(rawTex, pos).rgb;
+    vec3 rgb = texelFetch(rawTex, pos, 0).rgb;
 
-    // Some enviroment variable for light ambient control
-    // Shadows may have a slight greenish tint from the ground
-    float luminance = dot(rgb, vec3(0.3, 0.6, 0.1));
+    // Grayscale for luminance factor
+    float luminance = dot(rgb, vec3(0.299, 0.587, 0.114));
 
     if (luminance >= ShadowThreshold) return;
 
@@ -53,7 +52,7 @@ void main() {
             ivec2 checkPos = pos + ivec2(dx, dy);
             if (checkPos.x < 0 || checkPos.x >= size.x || checkPos.y < 0 || checkPos.y >= size.y) continue;
 
-            if (imageLoad(maskTex, checkPos).r > 0.5) {
+            if (texelFetch(maskTex, checkPos, 0).r > 0.5) {
                 // Found a building
 
                 float dist = length(vec2(dx, dy));
@@ -71,27 +70,37 @@ void main() {
         // Direction from building to shadow pixel
         vec2 shadowDir = vec2(pos - closestBuildingPos);
         
-        float angle = atan(shadowDir.y, shadowDir.x);
+        float angle = atan(-shadowDir.y, shadowDir.x);
         
         // Map atan func to [0, 2*PI]
         if (angle < 0.0) angle += 6.28318530718;
 
         // Check angle bounds (StartAngle - EndAngle)
 
-        if (angle >= StartAngle && angle <= EndAngle) {
-            float angleRange = EndAngle - StartAngle;
-            
-            // Calculate index
-            float progress = (angle - StartAngle) / angleRange;
-            int target_idx = int(round(progress * float(NUM_DIRECTIONS - 1)));
-            target_idx = clamp(target_idx, 0, NUM_DIRECTIONS - 1);
+        bool inRange = false;
+        if (StartAngle <= EndAngle) {
+            inRange = (angle >= StartAngle && angle <= EndAngle);
+        } else {
+            inRange = (angle >= StartAngle || angle <= EndAngle);
+        }
 
-            // Every pixel "votes" once with scaled vote_influence by inverse of max distance radius
-            // Shadows closer to a building are more likely to actually be in shadow
-            uint voteWeight = uint(clamp(int(float(DistanceThreshold) - minDistance), 1, DistanceThreshold));
+        if (inRange) {
+            float angleRange = (EndAngle >= StartAngle) ? (EndAngle - StartAngle) : ((EndAngle + 6.2831853) - StartAngle);
+            if (angleRange > 0.00001) {
+                float diff = (angle >= StartAngle) ? (angle - StartAngle) : ((angle + 6.2831853) - StartAngle);
+                float progress = diff / angleRange;
 
-            // Add up score for this direction using atomicAdd
-            atomicAdd(scores[target_idx], voteWeight);
+                // Calculate index
+                int target_idx = int(round(progress * float(NUM_DIRECTIONS - 1)));
+                target_idx = clamp(target_idx, 0, NUM_DIRECTIONS - 1);
+
+                // Every pixel "votes" once with scaled vote_influence by inverse of max distance radius
+                // Shadows closer to a building are more likely to actually be in shadow
+                uint voteWeight = uint(clamp(int(float(DistanceThreshold) - minDistance), 1, DistanceThreshold));
+
+                // Add up score for this direction using atomicAdd
+                atomicAdd(scores[target_idx], voteWeight);
+            }
         }
     }
 }

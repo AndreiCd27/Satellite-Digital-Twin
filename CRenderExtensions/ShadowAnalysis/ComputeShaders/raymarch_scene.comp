@@ -1,0 +1,70 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2D u_heights;
+layout(binding = 1, r8) writeonly uniform image2D sim_shadow_mask;
+
+uniform float ShadowAngle;       // In Radians
+uniform float ElevationAngle;    // In Radians
+uniform float MetersPerPixel = 0.3;
+uniform int MaxRaySteps = 120;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(u_heights, 0);
+    
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    vec2 startUV = (vec2(pos) + vec2(0.5)) / vec2(size);
+    vec4 startData = texture(u_heights, startUV);
+    float startHeight = startData.r + startData.g;
+
+    // --- FIX 1: Calculate True 3D Trigonometric Directions ---
+    vec3 lightDir;
+    lightDir.x = cos(ShadowAngle) * cos(ElevationAngle);
+    lightDir.z = sin(ShadowAngle) * cos(ElevationAngle);
+    lightDir.y = sin(ElevationAngle); // Vertical upward velocity component
+
+    // Get the horizontal heading direction
+    vec2 sunDir = normalize(lightDir.xz);
+    
+    // Convert 1 pixel step in world units to exact UV space mapping offsets
+    float worldStepMeters = MetersPerPixel; 
+    vec2 uvStep = (sunDir * worldStepMeters) / (vec2(size) * MetersPerPixel);
+
+    // --- FIX 2: Calculate the precise Vertical Slope per Meter ---
+    // Instead of tan(), we find the height change relative to horizontal distance
+    float horizontalLength = length(lightDir.xz);
+    float heightSlopePerMeter = (horizontalLength > 0.0001) ? (lightDir.y / horizontalLength) : 1000.0;
+
+    bool isShadowed = false;
+    float rayBias = 0.05; // Small threshold offset to prevent self-shadowing acne
+
+    // Raymarch outward along the sun slope vector path
+    for (int step = 1; step <= MaxRaySteps; step++) {
+        vec2 sampleUV = startUV + (uvStep * float(step));
+
+        // Map boundary check
+        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) {
+            break;
+        }
+
+        // Exact horizontal distance traversed in true meters
+        float horizontalDistanceMeters = float(step) * worldStepMeters;
+
+        // --- FIX 3: Linear Height Tracking ---
+        // This remains linear and will not explode as your angle changes
+        float currentRayHeight = startHeight + rayBias + (horizontalDistanceMeters * heightSlopePerMeter);
+
+        vec4 h_data = texture(u_heights, sampleUV);
+        float currentMapHeight = h_data.r + h_data.g;
+
+        if (currentMapHeight > currentRayHeight) {
+            isShadowed = true;
+            break;
+        }
+    }
+
+    float finalOutput = isShadowed ? 1.0 : 0.0;
+    imageStore(sim_shadow_mask, pos, vec4(finalOutput, 0.0, 0.0, 1.0));
+}

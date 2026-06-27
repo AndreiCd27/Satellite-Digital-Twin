@@ -1,0 +1,47 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, r32f) uniform writeonly image2D heightmap;
+
+layout(binding = 1) uniform sampler2D normHeightMapTex;
+layout(binding = 2) uniform sampler2D TerrainHeightmap;
+layout(binding = 3) uniform sampler2D BuildingsMask;
+
+uniform float default_building_height = 20.0;
+
+float GetUnifiedWorldHeight(vec2 uv) {
+
+    float terrainH = texture(TerrainHeightmap, uv).r;
+    
+    ivec2 maskSize = textureSize(BuildingsMask, 0);
+    ivec2 pixelTexCoord = ivec2(uv * vec2(maskSize));
+    pixelTexCoord = clamp(pixelTexCoord, ivec2(0), maskSize - ivec2(1));
+    
+    float mask = texelFetch(BuildingsMask, pixelTexCoord, 0).r;
+    float norm_h = texelFetch(normHeightMapTex, pixelTexCoord, 0).r;
+    float buildingMask = (mask > 0.01) ? 1.0 : 0.0;
+    
+    float buildingHeightMeters = texelFetch(normHeightMapTex, pixelTexCoord, 0).r;
+
+
+    return terrainH + (buildingMask * norm_h * default_building_height);
+}
+
+void main() {
+    // Out image dimensions
+    ivec2 size = imageSize(heightmap);
+    
+    // Current pixel coordinate
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    
+    if (pixelCoord.x >= size.x || pixelCoord.y >= size.y) return;
+    
+    // UV coords for out image heightmap
+    vec2 uv_h = vec2(pixelCoord) / vec2(float(size.x - 1), float(size.y - 1));
+    
+    // Calculate final height after adding the building height
+    float unifiedHeightMeters = GetUnifiedWorldHeight(uv_h);
+    
+    // Save meters in final texture
+    imageStore(heightmap, pixelCoord, vec4(unifiedHeightMeters, 0.0, 0.0, 0.0));
+}

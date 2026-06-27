@@ -1,0 +1,161 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D V0;
+layout(binding = 1) uniform sampler2D V1;
+layout(binding = 2) uniform sampler2D V2;
+layout(binding = 3) uniform sampler2D V3;
+layout(binding = 4) uniform sampler2D UnifiedHeightmap;
+layout(binding = 5) uniform sampler2D BuildingMask;
+
+layout(binding = 6, r32f) uniform writeonly image2D OutputIrradianceImage;
+
+void GetLightBasisYUp(float x, float y, float z, out float sh[16]) {
+    const float SHNorm[16] = float[](
+        0.282095,
+        0.488604, 0.488604, 0.488604,
+        1.092548, 1.092548, 0.315392, 1.092548, 0.546274,
+        0.590044, 2.890611, 0.457046, 0.373176, 0.457046, 1.4453055, 0.590044
+    );
+
+    // Band 0
+    sh[0] = 1.0;
+
+    // Band 1
+    sh[1] = x;
+    sh[2] = y; 
+    sh[3] = z;
+
+    // Band 2
+    sh[4] = x * z;
+    sh[5] = x * y;
+    sh[6] = 3.0 * y * y - 1.0;
+    sh[7] = y * z;
+    sh[8] = x * x - z * z;
+
+    // Band 3
+    sh[9]  = x * (3.0 * x * x - 9.0 * z * z);
+    sh[10] = x * z * y;
+    sh[11] = x * (5.0 * y * y - 1.0);
+    sh[12] = y * (5.0 * y * y - 3.0);
+    sh[13] = z * (5.0 * y * y - 1.0);
+    sh[14] = y * (x * x - z * z);
+    sh[15] = z * (3.0 * x * x - z * z);
+
+    for(int i = 0; i < 16; i++) {
+        sh[i] *= SHNorm[i];
+    }
+}
+
+
+struct TMYHourData {
+    float sun_x;
+    float sun_y;
+    float sun_z;
+    float dni;
+    float dhi;
+    float ghi;
+    float padding1;
+    float padding2;
+};
+
+layout(std430, binding = 0) readonly buffer TMYDataBuffer {
+    TMYHourData hours[];
+};
+
+uniform int TotalHours;
+uniform float MetersPerPixel = 0.3;
+uniform float F = 0.000114155; 
+uniform float SkipN_Days = 3;
+
+float GetVisibility2D(vec2 uv, float lightSH[16]) {
+    vec4 c0 = texture(V0, uv);
+    vec4 c1 = texture(V1, uv);
+    vec4 c2 = texture(V2, uv);
+    vec4 c3 = texture(V3, uv);
+
+    float Vis = 0.0;
+    Vis += c0.x * lightSH[0]  + c0.y * lightSH[1]  + c0.z * lightSH[2]  + c0.w * lightSH[3];
+    Vis += c1.x * lightSH[4]  + c1.y * lightSH[5]  + c1.z * lightSH[6]  + c1.w * lightSH[7];
+    Vis += c2.x * lightSH[8]  + c2.y * lightSH[9]  + c2.z * lightSH[10] + c2.w * lightSH[11];
+    Vis += c3.x * lightSH[12] + c3.y * lightSH[13] + c3.z * lightSH[14] + c3.w * lightSH[15];
+    
+    return clamp(Vis, 0.0, 1.0);
+}
+
+bool IsInShadowRaymarched(vec2 startUV, float startHeight, vec2 mapSize, vec3 LDir) {
+    vec3 VStep = LDir / vec3(mapSize.x, MetersPerPixel, mapSize.y);
+    if (length(VStep) < 0.0001) return false; 
+    
+    vec3 samplePos = vec3(startUV.x, startHeight, startUV.y);
+    vec3 stride = VStep * 2.0;
+    samplePos += stride;
+
+    for (int step = 1; step <= 50; step++) { 
+        if (samplePos.x < 0.0 || samplePos.x > 1.0 || samplePos.z < 0.0 || samplePos.z > 1.0) break;
+        
+        vec4 h_data = texture(UnifiedHeightmap, samplePos.xz);
+        if ((h_data.r + h_data.g) > samplePos.y + 4.0) return true;
+
+        samplePos += stride;
+    }
+    return false;
+}
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 mapSize = imageSize(OutputIrradianceImage);
+
+    if (pixelCoord.x >= mapSize.x || pixelCoord.y >= mapSize.y) return;
+
+    vec2 mapUV = (vec2(pixelCoord) + vec2(0.5)) / vec2(mapSize);
+
+    float bhval = texture(UnifiedHeightmap, mapUV).r;
+    if (bhval < 1.0) return;
+
+    float currentPixelHeight = bhval + texture(UnifiedHeightmap, mapUV).g;
+
+    float totalAccumulatedEnergy = 0.0;
+    int skipHours = int(SkipN_Days) * 24;
+
+    const float clearSkyZH[4] = float[](1.00, 0.51, 0.23, 0.08);
+    const float ZHconv[4] = float[](3.544907, 2.046653, 1.585331, 1.339857);
+
+    for (int t = 0; t < TotalHours; t++) {
+        
+        if (t > 0 && t % 24 == 0) {
+            t += skipHours;
+            if (t >= TotalHours) break;
+        }
+
+        TMYHourData hour = hours[t];
+
+        if (hour.ghi <= 0.0 || hour.sun_y < 0.0) continue;
+
+        vec3 L = normalize(vec3(hour.sun_x, hour.sun_y, hour.sun_z));
+        float lambert = max(0.0, L.y);
+
+        float shadowFactor = IsInShadowRaymarched(mapUV, currentPixelHeight, vec2(mapSize), L) ? 0.0 : 1.0;
+        float directIrradiance = shadowFactor * lambert * hour.dni;
+
+        float lightSH[16];
+        GetLightBasisYUp(L.x, L.y, L.z, lightSH);
+
+        float L0_scale = clearSkyZH[0] * ZHconv[0] * hour.dhi;
+        float L1_scale = clearSkyZH[1] * ZHconv[1] * hour.dhi;
+        float L2_scale = clearSkyZH[2] * ZHconv[2] * hour.dhi;
+        float L3_scale = clearSkyZH[3] * ZHconv[3] * hour.dhi;
+
+        lightSH[0] *= L0_scale;
+        for (int i = 1; i < 4; i++)  lightSH[i] *= L1_scale;
+        for (int i = 4; i < 9; i++)  lightSH[i] *= L2_scale;
+        for (int i = 9; i < 16; i++) lightSH[i] *= L3_scale;
+
+        float diffuseIrradiance = GetVisibility2D(mapUV, lightSH);
+        float Irr = (directIrradiance + diffuseIrradiance);
+
+        totalAccumulatedEnergy += Irr * F * SkipN_Days;
+    }
+
+    imageStore(OutputIrradianceImage, pixelCoord, vec4(totalAccumulatedEnergy, 0.0, 0.0, 0.0));
+}

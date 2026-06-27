@@ -1,0 +1,98 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D V0;
+layout(binding = 1) uniform sampler2D V1;
+layout(binding = 2) uniform sampler2D V2;
+layout(binding = 3) uniform sampler2D V3;
+layout(binding = 4) uniform sampler2D UnifiedHeightmap;
+layout(binding = 5) uniform sampler2D SatelliteTex;
+
+layout(binding = 6, r32f) uniform readonly image2D InputIrradianceImage;
+layout(binding = 7, r32f) uniform writeonly image2D OutputIrradianceImage;
+
+uniform vec4 LightSH[4];
+uniform vec3 LightDir;
+
+uniform float DNI;
+uniform float DHI;
+uniform float GHI;
+
+uniform float MetersPerPixel = 0.3; // Scale factor from pixels to meters
+uniform float F = 0.000114155; // Scale factor for average time over a year, includes transform to kWh/m2
+
+uniform float SkipN_Days = 3;
+
+float GetVisibility2D(vec2 uv) {
+    vec4 c0 = texture(V0, uv);
+    vec4 c1 = texture(V1, uv);
+    vec4 c2 = texture(V2, uv);
+    vec4 c3 = texture(V3, uv);
+
+    float Vis = 0.0;
+    Vis += dot(c0, LightSH[0]);
+    Vis += dot(c1, LightSH[1]);
+    Vis += dot(c2, LightSH[2]);
+    Vis += dot(c3, LightSH[3]);
+    
+    return clamp(Vis, 0.0, 1.0);
+}
+
+bool IsInShadowRaymarched(vec2 startUV, float startHeight, vec2 mapSize) {
+    
+    vec3 VStep = LightDir / vec3(mapSize.x, MetersPerPixel, mapSize.y);
+    if (length(VStep) < 0.0001) {
+        return false; 
+    }
+    
+    vec3 samplePos = vec3(startUV.x, startHeight, startUV.y);
+    
+    vec3 stride = VStep * 2.0;
+    samplePos += stride;
+
+    for (int step = 1; step <= 60; step++) {
+        if (samplePos.x < 0.0 || samplePos.x > 1.0 || samplePos.z < 0.0 || samplePos.z > 1.0) {
+            break;
+        }
+        
+        // Read Height (R = Building, G = Terrain)
+        vec4 h_data = texture(UnifiedHeightmap, samplePos.xz);
+        float currentHeight = h_data.r + h_data.g;
+
+        if (currentHeight > samplePos.y + 0.5) {
+            return true;
+        }
+
+        samplePos += stride;
+    }
+    return false;
+}
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 mapSize = imageSize(OutputIrradianceImage);
+
+    if (pixelCoord.x >= mapSize.x || pixelCoord.y >= mapSize.y) {
+        return;
+    }
+
+    vec2 mapUV = (vec2(pixelCoord) + vec2(0.5)) / vec2(mapSize);
+
+    vec4 startHData = texture(UnifiedHeightmap, mapUV);
+    float currentPixelHeight = startHData.r + startHData.g;
+
+    vec3 N = vec3(0.0, 1.0, 0.0);
+    vec3 L = normalize(LightDir);
+    float lambert = max(0.0, dot(N, L));
+
+    float shadowFactor = IsInShadowRaymarched(mapUV, currentPixelHeight, vec2(mapSize)) ? 0.0 : 1.0;
+    float directIrradiance = shadowFactor * lambert * DNI;
+    float diffuseIrradiance = GetVisibility2D(mapUV);
+    
+    float Irradiance = directIrradiance + diffuseIrradiance;
+
+    float accumulatedEnergy = imageLoad(InputIrradianceImage, pixelCoord).r;
+    
+    //imageStore(OutputIrradianceImage, pixelCoord, vec4(Irradiance * F * SkipN_Days + accumulatedEnergy, 0.0, 0.0, 0.0));
+    imageStore(OutputIrradianceImage, pixelCoord, vec4(shadowFactor, 0.0, 0.0, 0.0));
+}

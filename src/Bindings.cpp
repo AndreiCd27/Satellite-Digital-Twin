@@ -1,15 +1,38 @@
 
 #include "Bindings.h"
+#include "Engine3D.h"
 
 std::atomic<bool> python_should_run{ true };
+std::atomic<bool> __ENV_RESHADE_REQUEST{ true };
+std::atomic<bool> __PROCESS_PX_HALT_REQUEST{ false };
 
 MutexQueue<RenderCommand> PyRenderLoad;
 MutexQueue<TextureCommand> PyPixelLoad;
+MutexQueue<DataCommand> PyDataLoad;
+
+std::unordered_map<std::string, std::shared_ptr<Texture>> CommandBuffer::TextureSlots;
+
+std::shared_ptr<Texture> CommandBuffer::InitTexSlot(const std::string& TexKey) {
+    
+    auto tex = std::make_shared<Texture>();
+
+    TextureSlots.insert({ TexKey, tex });
+    std::cout << "[COMMAND_BUFFER] Generated texture with key: " << TexKey << "\n";
+    return tex;
+}
+std::shared_ptr<Texture> CommandBuffer::GetTexSlot(const std::string& TexKey) {
+    if (TextureSlots.find(TexKey) == TextureSlots.end()) {
+        //std::cout << "[COMMAND_BUFFER] ERROR: Texture with key: " << TexKey << " not found!\n";
+        return nullptr;
+    }
+    return TextureSlots[TexKey];
+}
 
 void CommandBuffer::ProcessPyRenderCommands(Scene* scene) {
 
     while (auto cmd = PyRenderLoad.TryPop()) {
-        ;
+
+        std::cout << "[RENDER] PROCESSED RENDER GEOMETRY COMMAND FROM PYTHON\n";
         // PushGeometry sets UpdateBuffers = true automatically
         if (cmd->set_geom) {
             scene->SetGeometry(cmd->vertices, cmd->indices);
@@ -19,24 +42,111 @@ void CommandBuffer::ProcessPyRenderCommands(Scene* scene) {
         }
     };
 }
+void CommandBuffer::ProcessPyDataCommands() {
+
+    while (auto cmd = PyDataLoad.TryPop()) {
+
+        std::cout << "[RENDER] PROCESSED DATA STORE COMMAND FROM PYTHON\n";
+        // PushGeometry sets UpdateBuffers = true automatically
+        if (cmd->dataType == "TMY") {
+
+            int w = 365 * 24; int channels = 4;
+
+            // Parse all 8760 hours in a year
+            for (int hour = 0; hour < w; hour++) {
+                int idx = hour * channels;
+
+                auto& tmyData = cmd->tmy;
+                auto& sunData = cmd->sun_dirs;
+
+                // Extract TMY Weather Metrics
+                float ghi = tmyData[idx + 0];
+                float dni = tmyData[idx + 1];
+                float dhi = tmyData[idx + 2];
+                float temp = tmyData[idx + 3];
+
+                // Extract Sun Vector Information
+                float sx = sunData[idx + 0];
+                float sy = sunData[idx + 1];
+                float sz = sunData[idx + 2];
+                float elev = sunData[idx + 3];
+
+                if (sx == 0.0f && sy == 0.0f && sz == 0.0f) {
+                    continue; // Skip invalid data points
+                }
+                if (dni < 0.0f || dhi < 0.0f) {
+                    continue; // Skip invalid data points
+                }
+
+                Engine3D::tmy_data.ghi.push_back(ghi);
+                Engine3D::tmy_data.dni.push_back(dni);
+                Engine3D::tmy_data.dhi.push_back(dhi);
+                Engine3D::tmy_data.temp.push_back(temp);
+
+                Engine3D::tmy_data.sun_x.push_back(sx);
+                Engine3D::tmy_data.sun_y.push_back(sy);
+                Engine3D::tmy_data.sun_z.push_back(sz);
+            }
+        }
+    };
+}
 void CommandBuffer::ProcessPyPixelCommands() {
-    // Extract all images from Python
+
     while (auto cmd = PyPixelLoad.TryPop()) {
 
-        // Get OpenGL format based on image channels
-        GLenum format = GL_RGB;
-        if (cmd->channels == 1) format = GL_RED;
-        else if (cmd->channels == 3) format = GL_BGR;  // OpenCV standard (BGR)
-        else if (cmd->channels == 4) format = GL_BGRA; // OpenCV w Alpha
+        std::cout << "[RENDER] PROCESSED PIXELS TO TEXTURE COMMAND FROM PYTHON\n";
 
-        glBindTexture(GL_TEXTURE_2D, cmd->textureID);
-        // Send pixel data to GPU
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cmd->width, cmd->height, 0, format, GL_UNSIGNED_BYTE, cmd->pixels.data());
-        // Filter params
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        if (TextureSlots.find(cmd->textureKey) == TextureSlots.end()) {
+            auto t = std::make_shared<Texture>();
+            TextureSlots[cmd->textureKey] = t;
+            t->GenTex2D();
+            std::cout << "[COMMAND_BUFFER] Generated texture ID: " << t->GetTexID() << " for key: " << cmd->textureKey << "\n";
+        }
+
+        auto& targetTex = TextureSlots[cmd->textureKey];
+
+        glBindTexture(GL_TEXTURE_2D, targetTex->GetTexID());
+
+        if (cmd->is_float) {
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            targetTex->CreateTex2D(cmd->width, cmd->height, GL_R32F, GL_RED, GL_FLOAT, cmd->pixels.data());
+            std::cout << "[TEXTURE FROM PYTHON] FLOAT TEXTURE --------------------\n";
+        }
+        else {
+            GLenum format = GL_RED;
+            GLenum internalFormat = GL_R8;
+
+            if (cmd->channels == 1) {
+                format = GL_RED;
+                internalFormat = GL_R8;
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            }
+            else if (cmd->channels == 3) {
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                format = GL_RGB;
+                internalFormat = GL_RGB8;
+            }
+            else if (cmd->channels == 4) {
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+                format = GL_RGBA;
+                internalFormat = GL_RGBA8;
+            }
+
+            targetTex->CreateTex2D(cmd->width, cmd->height, internalFormat, format, GL_UNSIGNED_BYTE, cmd->pixels.data());
+
+
+            std::cout << "[DEBUG TEXTURE] IMAGE DIMENSIONS: " << cmd->width << "x" << cmd->height
+                << " | InternalFormat: " << internalFormat << " | Format: "
+                << format << " | Channels: " << cmd->channels << "\n";
+        }
+
+        targetTex->MinMagFilter(GL_LINEAR, GL_LINEAR);
+        targetTex->WrapFilter(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
     }
 }
+
 
 PYBIND11_EMBEDDED_MODULE(py_engine3d, m) {
     m.doc() = "TinyCRender Python Worker API";
@@ -44,6 +154,12 @@ PYBIND11_EMBEDDED_MODULE(py_engine3d, m) {
 
     m.def("should_run", []() {
         return python_should_run.load();
+    });
+    m.def("should_halt", []() {
+        return __PROCESS_PX_HALT_REQUEST.load();
+    });
+    m.def("reshade", []() {
+        __ENV_RESHADE_REQUEST.store(true);
     });
 
     // AVertex class structure
@@ -67,36 +183,43 @@ PYBIND11_EMBEDDED_MODULE(py_engine3d, m) {
         PyRenderLoad.Push(std::move(cmd));
         }, pybind11::arg("vertices"), pybind11::arg("indices")
     );
-    m.def("push_texture_pixels", [](pybind11::buffer b, unsigned int textureSlotID) {
+    m.def("push_tmy_data", [](std::vector<float> tmy, std::vector<float> sun_dirs) {
+        auto cmd = std::make_unique<DataCommand>(std::move(tmy), std::move(sun_dirs), "TMY");
+        PyDataLoad.Push(std::move(cmd));
+        }, pybind11::arg("tmy_f4"), pybind11::arg("sun_dirs_f4")
+    );
+    m.def("push_texture_pixels", [](pybind11::buffer b, std::string textureKey) {
         // Get info about NumPy buffer
         pybind11::buffer_info info = b.request();
 
-        if (info.format != pybind11::format_descriptor<unsigned char>::value) {
-            throw std::runtime_error("Incompatible format! Expected uint8 (unsigned char) array");
+        bool is_float = false;
+        if (info.format == pybind11::format_descriptor<float>::value) {
+            is_float = true;
+        }
+        else if (info.format != pybind11::format_descriptor<unsigned char>::value) {
+            throw std::runtime_error("Incompatible format! Expected float32 or uint8 array.");
         }
 
-        // info.shape is [height, width, channels] for colored images
-        // or [height, width] for grayscale
         int height = static_cast<int>(info.shape[0]);
         int width = static_cast<int>(info.shape[1]);
         int channels = (info.ndim == 3) ? static_cast<int>(info.shape[2]) : 1;
 
-        // Total image bytes
         size_t total_bytes = info.size * info.itemsize;
+        unsigned char* ptr = reinterpret_cast<unsigned char*>(info.ptr);
 
-        // Pointer to pixels in Python Memory
-        unsigned char* ptr = static_cast<unsigned char*>(info.ptr);
-
-        // Fast copy python data to C++ array
         auto cmd = std::make_unique<TextureCommand>();
-        cmd->pixels.assign(ptr, ptr + total_bytes);
+
+        cmd->pixels.resize(total_bytes);
+        std::memcpy(cmd->pixels.data(), ptr, total_bytes);
+
         cmd->width = width;
         cmd->height = height;
         cmd->channels = channels;
-        cmd->textureID = textureSlotID;
+        cmd->textureKey = textureKey; // Save Texture Key
+        cmd->is_float = is_float;
 
         // Push command to mutex queue
         PyPixelLoad.Push(std::move(cmd));
-        }, pybind11::arg("image_array"), pybind11::arg("texture_id")
+        }, pybind11::arg("image_array"), pybind11::arg("texture_key")
     );
 }

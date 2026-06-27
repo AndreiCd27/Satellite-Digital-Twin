@@ -1,0 +1,62 @@
+#version 430
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, r8) uniform image2D buildingMask;
+layout(binding = 1, r8) uniform image2D inShadowMask;
+
+// Output
+layout(binding = 2, r8) uniform image2D outShadowMask;
+
+uniform vec2 sunDir;
+uniform int DistanceThreshold;
+
+void main() {
+    ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inShadowMask);
+    
+    if (texelCoord.x >= size.x || texelCoord.y >= size.y) return;
+
+    float sval = imageLoad(inShadowMask, texelCoord).r;
+    float bval = imageLoad(buildingMask, texelCoord).r;
+
+    // Pixel is lit or building
+    if (bval > 0.9 || sval < 0.01) {
+        imageStore(outShadowMask, texelCoord, vec4(0.0));
+        return;
+    }
+
+    // Go back towards building to check if it connects to one
+    vec2 currentPos = vec2(texelCoord);
+    bool validSRay = false;
+
+    int discontinuityCounter = 0;
+    
+    for (int i = 1; i <= DistanceThreshold; i++) {
+        currentPos += sunDir; 
+        ivec2 sampleCoord = ivec2(round(currentPos));
+        
+        if (sampleCoord.x < 0 || sampleCoord.x >= size.x || sampleCoord.y < 0 || sampleCoord.y >= size.y) {
+            break;
+        }
+        
+        float valBuilding = imageLoad(buildingMask, sampleCoord).r;
+        float valShadow = imageLoad(inShadowMask, sampleCoord).r;
+        
+        // Hit building, most pixels on the path were shadowed
+        if (valBuilding > 0.9) {
+            if (discontinuityCounter < 4) {
+                validSRay = true;
+            }
+            break;
+        }
+        
+        // Discontinuity on the path traveled, some pixel was NOT shadowed
+        if (valShadow < 0.01) {
+            discontinuityCounter += 1; 
+        }
+    }
+
+    // Line segment from ray to building was completely shadowed, write 1
+    uint finalValue = validSRay ? 1u : 0u;
+    imageStore(outShadowMask, texelCoord, vec4(finalValue));
+}

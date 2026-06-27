@@ -1,31 +1,17 @@
 #version 430 core
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(binding = 0, rgba8) uniform readonly image2D rawTex;
-layout(binding = 1, rgba8) uniform readonly image2D maskTex;
+layout(binding = 0) uniform sampler2D rawTex;
+layout(binding = 1) uniform sampler2D maskTex;
 
 layout(binding = 2, r8) writeonly uniform image2D shadowMaskTex;
 layout(binding = 3, r8) writeonly uniform image2D heightMapTex;
 
-uniform float ShadowAngle;    
+uniform float ShadowAngle;
 uniform int DistanceThreshold = 30;
-uniform float ShadowThreshold = 0.35; 
+uniform float ShadowThreshold = 0.35;
 
-void main() {
-    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = imageSize(maskTex);
-    if (pos.x >= size.x || pos.y >= size.y) return;
-
-    float isBuilding = imageLoad(maskTex, pos).r;
-
-    if (isBuilding > 0.5) {
-        imageStore(shadowMaskTex, pos, vec4(0.0));
-        imageStore(heightMapTex, pos, vec4(1.0));
-        return;
-    }
-
-    vec2 sunDir = -vec2(cos(ShadowAngle), -sin(ShadowAngle));
-
+vec2 GetRayStep(vec2 sunDir) {
     // DDA algorithm
     vec2 absDir = abs(sunDir);
     vec2 rayStep = vec2(0.0);
@@ -34,40 +20,109 @@ void main() {
     } else {
         rayStep = vec2(sunDir.x / absDir.y, sign(sunDir.y));
     }
+    return rayStep;
+}
 
-    bool hitBuilding = false;
-    int stepsToBuilding = 0;
-    vec2 currentRayPos = vec2(pos);
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(maskTex, 0);
+    if (pos.x >= size.x || pos.y >= size.y) return;
 
-    // Raytrace back to the sun
-    for (int step = 1; step <= DistanceThreshold; step++) {
-        currentRayPos += rayStep;
-        ivec2 samplePos = ivec2(round(currentRayPos));
+    float isBuilding = texelFetch(maskTex, pos, 0).r;
+    
+    vec2 sunDir = vec2(cos(ShadowAngle), sin(ShadowAngle));
 
-        if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) break;
-
-        // If we hit a building, it obstructs the light
-        if (imageLoad(maskTex, samplePos).r > 0.5) {
-            hitBuilding = true;
-            stepsToBuilding = step;
-            break; // FOund obstacle building
-        }
-    }
-
-    // Take luminace relative to ground tint
-    vec3 rgb = imageLoad(rawTex, pos).rgb;
-    float luminance = dot(rgb, vec3(0.3, 0.6, 0.1));
-
-    // IF blocked by building AND satellite has dark pixel
-    if (hitBuilding && luminance < ShadowThreshold) {
-        imageStore(shadowMaskTex, pos, vec4(1.0)); // Mark as SHADOW
+    if (isBuilding < 0.9) {
+        // CASE 1: ground pixel ////////////////////////////////
         
-        // Save distance to building to put in a heightmap (later use)
-        float normHeight = float(DistanceThreshold - stepsToBuilding) / float(DistanceThreshold);
-        imageStore(heightMapTex, pos, vec4(normHeight));
-    } else {
-        // Pixel is lit by the sun
-        imageStore(shadowMaskTex, pos, vec4(0.0));
+        // Store 0 in building heightmap
         imageStore(heightMapTex, pos, vec4(0.0));
+
+        vec2 rayStep = GetRayStep(sunDir);
+
+        bool hitBuilding = false;
+        vec2 currentRayPos = vec2(pos);
+
+        // Raytrace TOWARDS the sun
+        for (int step = 1; step <= DistanceThreshold; step++) {
+            currentRayPos += rayStep;
+            ivec2 samplePos = ivec2(round(currentRayPos));
+
+            if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) break;
+
+            // If we hit a building, it obstructs the light
+            if (texelFetch(maskTex, samplePos, 0).r > 0.9) {
+                hitBuilding = true;
+                break; // FOund obstacle building
+            }
+        }
+
+        // Take luminace in grayscale
+        vec3 rgb_ground = texelFetch(rawTex, pos, 0).rgb;
+        float luminance = dot(rgb_ground, vec3(0.299, 0.587, 0.114));
+        
+        if (hitBuilding && luminance < ShadowThreshold) {
+            float shadowIntensity = clamp(1.0 - 0.75 * luminance / ShadowThreshold, 0.0, 1.0);
+            imageStore(shadowMaskTex, pos, vec4(shadowIntensity)); // Mark as SHADOW
+        } else {
+            imageStore(shadowMaskTex, pos, vec4(0.0));
+        }
+
+    } else {
+        // CASE 2: building pixel //////////////////////////////
+
+        // Store 0 in shadow mask
+        imageStore(shadowMaskTex, pos, vec4(0.0));
+        
+        // Find shadow length for this building
+        // First, check if pixel is on building edge
+        bool onBuildingEdge = false;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                ivec2 samplePos = pos + ivec2(dx,dy);
+                if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) break;
+                if ( texelFetch(maskTex, samplePos, 0).r < 0.5 ) {
+                    // Found non-building
+                    onBuildingEdge = true;
+                    break;
+                }
+            }
+        }
+        
+        if (onBuildingEdge) {
+            // Trace in the opossite direction from the sun
+            vec2 sunDir = -sunDir;
+
+            vec2 rayStep = GetRayStep(sunDir);
+
+            bool shadowEnd = false;
+            ivec2 lastShadowPixel = pos;
+            vec2 currentRayPos = vec2(pos);
+
+            // Raytrace OPPOSITE TO the sun
+            for (int step = 1; step <= DistanceThreshold; step++) {
+                currentRayPos += rayStep;
+                ivec2 samplePos = ivec2(round(currentRayPos));
+
+                if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) break;
+
+                vec3 rgb_ground = texelFetch(rawTex, samplePos, 0).rgb;
+                float luminance = dot(rgb_ground, vec3(0.299, 0.587, 0.114));
+
+                if (luminance > ShadowThreshold) {
+                    shadowEnd = true;
+                    lastShadowPixel = samplePos;
+                    break; // Found ground pixel that is not shadow
+                }
+            }
+
+            // Geometric distance from start pixel (building edge) to shadow edge
+            vec2 dshadow = vec2(pos - lastShadowPixel);
+            float shadowLength = length(dshadow);
+
+            imageStore(heightMapTex, pos, vec4(min(shadowLength / 255.0, 1.0)));
+        } else {
+            imageStore(heightMapTex, pos, vec4(0.0));
+        }
     }
 }

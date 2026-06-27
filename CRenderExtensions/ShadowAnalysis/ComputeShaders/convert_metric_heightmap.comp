@@ -1,0 +1,43 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2D normHeightMapTex; // norm_heights
+
+// Final float32 texture where we write the results
+layout(binding = 1, rg32f) writeonly uniform image2D metricHeightMapTex; 
+
+// Terrain texture
+layout(binding = 2) uniform sampler2D TerrainHeightmap; 
+
+uniform float ElevationAngle;
+uniform float MetersPerPixel = 0.5;
+uniform int DistanceThreshold = 40;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(normHeightMapTex, 0);
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    vec2 uv = (vec2(pos) + vec2(0.5)) / vec2(size);
+    
+    // Base height
+    float terrainHeight = texture(TerrainHeightmap, uv).r;
+
+    float normHeight = texelFetch(normHeightMapTex, pos, 0).r;
+    float buildingHeightMeters = 0.0;
+
+    if (normHeight > 0.0) {
+        // Shadow length (pixels) is normHeight / 255
+
+        if (normHeight < 0.1) {
+            normHeight = 0.1;
+        }
+        
+        // Trigonometric conversion in building height (meters)
+        float shadowLengthMeters = MetersPerPixel * normHeight * 255.0;
+        float clElevation = clamp(ElevationAngle, 0.05, 1.52);
+        buildingHeightMeters = shadowLengthMeters * tan(clElevation);
+    }
+    
+    imageStore(metricHeightMapTex, pos, vec4(buildingHeightMeters, terrainHeight, 0.0, 1.0));
+}

@@ -1,0 +1,68 @@
+#version 430 core
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct AVertex {
+    vec3 Position;  // 12 bytes
+    uint Color;     // 4 bytes
+    vec3 Normal;    // 12 bytes
+    uint AUV;       // 4 bytes
+};
+
+// VBO as SSBO
+layout(std430, binding = 0) buffer VertexBuffer {
+    AVertex vertices[];
+};
+
+layout(binding = 1) uniform sampler2D uHeightmap;
+
+uniform vec3 WorldMin;
+uniform vec3 WorldSInverse; // = 1.0 / (WorldMax - WorldMin)
+uniform uint TotalVertices;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= TotalVertices) return;
+
+    ivec2 texSize = textureSize(uHeightmap, 0);
+
+    // Get Instance ID (roof/base/terrain)
+    // AUV > 65536 means it is roof, so we elevate it according to heightmap
+    uint bID = vertices[idx].AUV;
+
+    vec2 mapUV;
+    mapUV.x = (vertices[idx].Position.x - WorldMin.x) * WorldSInverse.x;
+    mapUV.y = (vertices[idx].Position.z - WorldMin.z) * WorldSInverse.z;
+    mapUV = clamp(mapUV, 0.001, 0.999);
+    mapUV = vec2(mapUV.x * 2.0, 1.0) - mapUV;
+
+    ivec2 basePixelCoord = ivec2(mapUV * vec2(texSize));
+
+    // Read terrain height from uHeightmap
+    float terrainHeight = texelFetch(uHeightmap, basePixelCoord, 0).g;
+
+    if (bID > 65536u) {
+        // Move from vertex toward the geometric center of the building
+        // To avoid reading terrain pixels
+        // We sample a NxN grid and get maxBuildingHeight
+        float maxBuildingHeight = 0.0;
+        int N = 3; // 7x7 grid
+
+        for (int dy = -N; dy <= N; dy++) {
+            for (int dx = -N; dx <= N; dx++) {
+                ivec2 sampleCoord = basePixelCoord + ivec2(dx, dy);
+                sampleCoord = clamp(sampleCoord, ivec2(0), texSize - ivec2(1));
+
+                float sampleH = texelFetch(uHeightmap, sampleCoord, 0).r;
+                
+                if (sampleH > maxBuildingHeight) {
+                    maxBuildingHeight = sampleH;
+                }
+            }
+        }
+
+        vertices[idx].Position.y = terrainHeight + maxBuildingHeight;
+    } else {
+        vertices[idx].Position.y = terrainHeight;
+    }
+}

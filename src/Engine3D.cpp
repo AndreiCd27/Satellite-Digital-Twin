@@ -75,6 +75,9 @@ int Engine3D::getDrawStyle(const char* style) {
 
 void Engine3D::setupShaders() {
 
+	glGenVertexArrays(1, &emptyVAO);
+	DebugTexShader.Setup("Shaders/debug_tex.vert", "Shaders/debug_tex.frag");
+
 	instanceProgram.Setup("Shaders/instance.vert", "Shaders/instance.frag");
 
 	shadowProgram.Setup("Shaders/shadow.vert", "Shaders/shadow.frag");
@@ -114,12 +117,12 @@ void Engine3D::setupGeometryArrayObjects(const char* style) {
 	// ANormal ( 3 floats )
 	VAO_1.LinkVBO(VBO_1, 2, 3, GL_FLOAT, stride, GL_FALSE, voidcast(16));
 	// UV ( uint32 = short + short )
-	VAO_1.LinkVBO(VBO_1, 3, 2, GL_UNSIGNED_SHORT, stride, GL_TRUE, voidcast(28));
+	VAO_1.LinkVBO_int(VBO_1, 3, 1, GL_UNSIGNED_INT, stride, voidcast(28));
 
 	if (DEBUG)std::cout << "VBO linking complete \n";
 
 	depthTextureObject.setupFBO();
-	depthTextureObject.setupDepthTexture(4096);
+	depthTextureObject.setupDepthTexture(4096*2);
 
 	if (DEBUG)std::cout << "Setup FBO complete \n";
 
@@ -149,18 +152,35 @@ void Engine3D::SetupFull(const char* drawStyle) {
 Camera& Engine3D::getCamera(bool Sun) { if (Sun) { return SunCamera; } return UserCamera; }
 Scene* Engine3D::getScene() { return &MainScene; }
 
-void Engine3D::initGameFrame(float timeOfDay) {
+void Engine3D::setSunAzimuthAndElevation(float azimuth, float elevation, float R) {
+	//std::cout << "ELEVATION: " << elevation << " AZIMUTH: " << azimuth<<"\n";
+	float x = R * cosf(elevation) * sinf(azimuth);
+	float z = R * cosf(elevation) * cosf(azimuth);
+	float y = R * sinf(elevation);
+	SunCamera.Position = AVector3(x, y, z);
+}
 
-	float latitudeDeg = 40.0f;
+bool Engine3D::SunFromTMY(int t) {
+	if (tmy_data.sun_x.size() == 0) {
+		SunCamera.Position = AVector3(0.0f, 1.0f, 0.0f);
+	}
+	else {
+		if (t < tmy_data.sun_x.size() && t >= 0) {
+			render_t = t;
+			SunCamera.Position = AVector3(tmy_data.sun_x[t], tmy_data.sun_y[t], tmy_data.sun_z[t]);
+			/*
+			std::cout << "[SUN POSITION]" << SunCamera.Position.x
+				<< " " << SunCamera.Position.y << " " << SunCamera.Position.z << "\n";
+			*/
+		}
+		else {
+			return false;
+		}
+	}
+	return true;
+}
 
-	float hourAngle = (timeOfDay - 12.0f) * (glm::pi<float>() / 12.0f);
-	float latRad = glm::radians(latitudeDeg);
-
-	float x = sin(hourAngle);
-	float y = cos(hourAngle) * cos(latRad);
-	float z = cos(hourAngle) * sin(latRad);
-
-	SunCamera.Position = AVector3(x * 100.0f, y * 100.0f, z * 100.0f);
+void Engine3D::initGameFrame() {
 
 	// Framecounter
 	double CURRENT_TIME = glfwGetTime();
@@ -176,15 +196,16 @@ void Engine3D::initGameFrame(float timeOfDay) {
 		FPS.frameCounter = 0;
 	}
 	// Set background color to be drawn
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glClearColor(backgroundColor.R, backgroundColor.G, backgroundColor.B, backgroundColor.A);
 
 	cfg.Exec(INIT_GAME_FRAME_STAGE);
+
 }
 
 
 void Engine3D::registerCameraInput(float FOVdeg, float zNear, float zFar) {
 
-	//UserCamera.Matrix(FOVdeg, zNear, zFar, windowAspectRatio, shaderProgram);
 	UserCamera.Matrix(FOVdeg, zNear, zFar, window.getAspectRatio(), instanceProgram);
 
 	if (cfg.CameraOverride == true) {
@@ -199,8 +220,6 @@ void Engine3D::registerCameraInput(float FOVdeg, float zNear, float zFar) {
 }
 
 void Engine3D::DrawAll() {
-	int totalIndices = MainScene.GetEBOsize();
-	if (totalIndices <= 0) return;
 
 	VAO_1.Bind();
 
@@ -269,11 +288,12 @@ void Engine3D::renderPass(float FOVdeg, float zNear, float zFar) {
 
 void Engine3D::UpdateBuffers() {
 	if (MainScene.GetUpdateStatus()) {
+		std::cout << "+++++++++ UPDATE BUFFERS ++++++++++++++++++++\n";
 
 		std::lock_guard<std::mutex> lock(MainScene.GetMutex());
 
-		const auto& vert = MainScene.GetVBO_Vector();
-		const auto& indicies = MainScene.GetEBO_Vector();
+		auto& vert = MainScene.GetVBO_Vector();
+		auto& indicies = MainScene.GetEBO_Vector();
 
 		if (vert.empty() || indicies.empty()) return;
 
@@ -283,17 +303,20 @@ void Engine3D::UpdateBuffers() {
 		EBO_1.Bind();
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, indicies.size() * sizeof(GLuint), indicies.data(), GL_STATIC_DRAW);
 
+		totalIndices = (int)indicies.size();
+
 		MainScene.ResetUpdateStatus();
 	}
 }
 
-void Engine3D::Render(float timeOfDay) {
+void Engine3D::Render() {
 
-	// Send & Update Buffers
-	UpdateBuffers();
-	//
-
-	initGameFrame(timeOfDay);
+	if (DEBUG_TEXTURE && debug_texture_target != nullptr) {
+		RenderDebugTexture(*debug_texture_target);
+		glfwSwapBuffers(window.getWindow());
+		glfwPollEvents();
+		return;
+	}
 
 	if (cfg.PreRenderRequest != nullptr) {
 		//std::cout << "Executing Pre Render Request!\n";
@@ -310,6 +333,9 @@ void Engine3D::Render(float timeOfDay) {
 			//std::cout << "Executing Post Render Request!\n";
 			cfg.PostRenderRequest->Exec();
 		}
+
+		// IMGUI Connection
+		cfg.Exec(GUI_INSTANCES_STAGE);
 		
 		//Swap BACK BUFFER with FRONT BUFFER
 		glfwSwapBuffers(window.getWindow());
@@ -320,12 +346,15 @@ void Engine3D::Render(float timeOfDay) {
 	}
 
 	shadowPass();
-	renderPass(45.0f, 0.1f, 1000.0f);
+	renderPass(45.0f, 0.1f, 5000.0f);
 
 	if (cfg.PostRenderRequest != nullptr) {
 		//std::cout << "Executing Post Render Request!\n";
 		cfg.PostRenderRequest->Exec();
 	}
+
+	// IMGUI Connection
+	cfg.Exec(GUI_INSTANCES_STAGE);
 
 	//Swap BACK BUFFER with FRONT BUFFER
 	glfwSwapBuffers(window.getWindow());
@@ -350,7 +379,6 @@ void Engine3D::EngineTerminate() {
 	if (engine->EBO_1.GetCompleteStatus()) engine->EBO_1.Delete();
 
 	//Delete shader
-	if (engine->shaderProgram.GetCompleteStatus()) engine->shaderProgram.Delete();
 	if (engine->instanceProgram.GetCompleteStatus()) engine->instanceProgram.Delete();
 
 	//Destroy WINDOW OBJECT
@@ -359,3 +387,32 @@ void Engine3D::EngineTerminate() {
 	delete engine;
 
 }
+
+bool Engine3D::DEBUG_TEXTURE = false;
+int Engine3D::DEBUG_TEXTURE_CHANNELS = 3;
+Texture* Engine3D::debug_texture_target = nullptr;
+float Engine3D::DEBUG_TEXTURE_SCALAR = 1.0f;
+
+void Engine3D::RenderDebugTexture(const Texture& texToDebug) {
+	
+	glDisable(GL_DEPTH_TEST);
+
+	DebugTexShader.Activate();
+
+	DebugTexShader.SetFloat("scale", DEBUG_TEXTURE_SCALAR);
+
+	DebugTexShader.SetInt("debug_tex", 0);
+	DebugTexShader.SetInt("channels", DEBUG_TEXTURE_CHANNELS);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texToDebug.GetTexID());
+
+	glBindVertexArray(emptyVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glBindVertexArray(0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glEnable(GL_DEPTH_TEST);
+}
+
+TMY_DATA Engine3D::tmy_data;

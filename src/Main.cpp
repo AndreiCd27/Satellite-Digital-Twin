@@ -7,94 +7,302 @@
 #include "ShadowAnalyzer.h"
 #include "PythonWorker.h"
 
+#include "GUI.h"
+
 #define scene engine->getScene()
+
+void DebugTextureR32F(Texture* t) {
+    int w = t->GetWidth();
+    int h = t->GetHeight();
+
+    std::cout << "Debug texture =======================================================================\n";
+
+    std::vector<float> cpuPixels(w * h, 0.0f);
+
+    glBindTexture(GL_TEXTURE_2D, t->GetTexID());
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, cpuPixels.data());
+
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        std::cout << "[GPU ERROR] glGetTexImage failed with error code: " << err << "\n";
+    }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    float avgH = 0.0f;
+    float maxH = 0.0f;
+    int bcnt = 0;
+
+    for (int i = 0; i < w * h; i++) {
+        if (cpuPixels[i] > 0.0f) {
+            avgH += cpuPixels[i];
+            bcnt++;
+        }
+        if (cpuPixels[i] > maxH) {
+            maxH = cpuPixels[i];
+        }
+    }
+
+    std::cout << "--------------------------------------------------------------\n";
+    std::cout << "[GPU TEXTURE CHECK] Non-Zero PX Count: " << bcnt << " / " << (w * h) << "\n";
+    std::cout << "[GPU TEXTURE CHECK] Max PX value: " << maxH << "\n";
+    std::cout << "[GPU TEXTURE CHECK] Average PX value: " << avgH / (float(bcnt) + 0.000001f) << "\n";
+    std::cout << "--------------------------------------------------------------\n";
+}
+
+
+std::string GetDebugTexKey(int tt) {
+    std::string key;
+    if (tt == 0) key = "satellite";
+    if (tt == 1) key = "buildings_mask";
+    if (tt == 2) key = "shadow_mask";
+    if (tt == 3) key = "shadow_mask_ref";
+    if (tt == 4) key = "sim_shadow_mask";
+    if (tt == 5) key = "diff_shadow_mask";
+    if (tt == 6) key = "norm_heights";
+    if (tt == 7) key = "u_heights";
+    if (tt == 8) key = "Vis0";
+    if (tt == 9) key = "Vis1";
+    if (tt == 10) key = "Vis2";
+    if (tt == 11) key = "Vis3";
+    if (tt == 12) key = "sum_irradiance_out";
+
+    if (tt == 7) { Engine3D::DEBUG_TEXTURE_SCALAR = 1.0f / 60.0f; }
+    else { Engine3D::DEBUG_TEXTURE_SCALAR = 1.0f; }
+
+    if (tt == 12 || tt ==13) {
+        Engine3D::DEBUG_TEXTURE_CHANNELS = 1;
+        Engine3D::DEBUG_TEXTURE_SCALAR = 1.0f / 1000.0f;
+    }
+    if (tt == 7) { Engine3D::DEBUG_TEXTURE_CHANNELS = 2; }
+    else { Engine3D::DEBUG_TEXTURE_CHANNELS = 3; }
+
+    return key;
+}
+
+void DebugTex(int tt) {
+    std::shared_ptr<Texture> stex = nullptr;
+    auto key = GetDebugTexKey(tt);
+    stex = CommandBuffer::GetTexSlot(key);
+    if (stex != nullptr) {
+        std::cout << "[TEXTURE_DEBUG] Showing Texture " << key << " # # # # # # # # # # # # # # # # # # # # # # # \n";
+        Engine3D::DEBUG_TEXTURE = true;
+        Engine3D::debug_texture_target = stex.get();
+    }
+}
+
+void DebugAllTex(Engine3D* e) {
+    for (int i = 0; i < 13; i++) {
+        DebugTex(i);
+        e->Render();
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+    Engine3D::DEBUG_TEXTURE = false;
+}
+
+void DebugIrr(Engine3D* engine) {
+    static int debugStage = 0;
+    static double debugTimer = 0.0;
+
+
+    if (debugStage == 0) {
+        glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+        DebugTex(12);
+        engine->Render();
+        debugStage = 1;
+        debugTimer = glfwGetTime();
+    }
+
+    double currentTime = glfwGetTime();
+
+    if (debugStage == 1 && (currentTime - debugTimer >= 3.0)) {
+        DebugTex(13);
+        engine->Render();
+        debugStage = 2;
+        debugTimer = currentTime;
+    }
+
+    if (debugStage == 2 && (currentTime - debugTimer >= 3.0)) {
+        debugStage = 0;
+        __PROCESS_PX_HALT_REQUEST.store(false);
+    }
+}
+
+static bool ReshadeAndUpdateScene(Engine3D* engine, SatelliteAnalyzer& SatelliteImageAnalyze, SHLM& shlm, bool geom) {
+
+    auto terrain_tex = CommandBuffer::GetTexSlot("heightmap");
+    auto bmask_tex = CommandBuffer::GetTexSlot("buildings_mask");
+
+    if (terrain_tex == nullptr || bmask_tex == nullptr) return false;
+
+    if (__ENV_RESHADE_REQUEST == false) return false;
+    while (Scene::SCENE_GEOMETRY_UPDATE == false) {
+        CommandBuffer::ProcessPyRenderCommands(engine->getScene());
+    }
+    Scene::SCENE_GEOMETRY_UPDATE = false;
+    if (geom) engine->UpdateBuffers();
+
+    std::cout << "[RENDER] ---------------------------------------------------------------------\n";
+    std::cout << "[RENDER] Analyzing satellite image...\n";
+    std::cout << "[RENDER] ---------------------------------------------------------------------\n";
+    //SatelliteAnalyzer::ResetGLContexts();
+    SatelliteImageAnalyze.ResetAnalysisState();
+    SatelliteImageAnalyze.AnalyzeFromQueue();
+
+    auto u_heights_tex = CommandBuffer::GetTexSlot("u_heights");
+    auto satellite_tex = CommandBuffer::GetTexSlot("satellite");
+
+    std::cout << "[RENDER] ---------------------------------------------------------------------\n";
+    std::cout << "[RENDER] Relighting scene...\n";
+    std::cout << "[RENDER] ---------------------------------------------------------------------\n";
+    //SatelliteAnalyzer::ResetGLContexts();
+    if (u_heights_tex) shlm.SetUnifiedHeightmap(u_heights_tex.get());
+    if (satellite_tex) shlm.SetSatelliteTexture(satellite_tex.get());
+    shlm.SH_Heightmap_Shading_Compute();
+    //SatelliteAnalyzer::ResetGLContexts();
+    std::cout << "[RENDER] ---------------------------------------------------------------------\n";
+    std::cout << "[RENDER] Relighting complete!\n";
+    std::cout << "[RENDER] ---------------------------------------------------------------------\n";
+    glFinish();
+
+    if (geom) {
+        shlm.ElevateVBO();
+
+        engine->getScene()->ClearVBO();
+        engine->getScene()->ClearEBO();
+    }
+
+    DebugAllTex(engine);
+
+    return true;
+}
+
+void DebugTMY(Engine3D* engine) {
+    float dhi = Engine3D::tmy_data.dni[engine->render_t];
+    float dni = Engine3D::tmy_data.dni[engine->render_t];
+    float ghi = Engine3D::tmy_data.ghi[engine->render_t];
+    std::cout << "DHI = " << dhi << " DNI = " << dni << " GHI = " << ghi << "\n";
+}
+
 
 int main() {
 
     Engine3D* engine = Engine3D::GetEngine3D();
-
-    std::cout << "Start main\n";
 
     int success = engine->setupWindow(1200, 900, "window");
     if (!success) { std::cerr << "Error at setup \n"; Engine3D::EngineTerminate(); return -1; }
 
 
     PyWorker pythonWorker;
-    pythonWorker.Start("Python/test.py");
+    pythonWorker.Start("Python/inference.py");
 
     // SH soft shadows
 
-    SHLM shlm(engine, engine->getCFG(), 
-        AVector3(1024,64,1024), AVector3(-1024.0f, -16.0f, -1024.0f), AVector3(1024.0f, 48.0f, 1024.0f));
+    float px2meters = 0.3f;
+    float imgSize = 5000.0f * px2meters / 2.0f;
 
-    AVertex v0(0.0f, 0.0f, 0.0f, 255, 0, 0, 255);
-    AVertex v1(100.0f, 0.0f, 0.0f, 0, 255, 0, 255);
-    AVertex v2(100.0f, 0.0f, 100.0f, 255, 0, 255, 255);
-    AVertex v3(0.0f, 0.0f, 100.0f, 0, 255, 0, 255);
-    std::vector<AVertex> vert = {
-        v0, v1, v2, v3
-    };
-    std::vector<GLuint> ind = {
-        0,2,1, 0,3,2
-    };
-    scene->PushGeometry(vert, ind);
+    SHLM shlm(engine, engine->getCFG(),
+        AVector3(2048, 128, 2048), AVector3(-imgSize, -128.0f, -imgSize), AVector3(imgSize, 128.0f, imgSize));
 
-    
     //////////////////////////////
-    engine->DEBUG_ArrayOrganizers();
-    
+
     engine->SetupFull("static");
 
     engine->setBackground(0.0f, 0.0f, 0.0f, 1.0f);
-
-    std::cout << "Printing Instance VBO dimensions: \n";
     
-    float t = 8.0f;
-
+    int t = 0;
+    const int maxt = 360 * 24;
+    // time control variables relative to frames
+    int ctrl_t = 0;
+    int frames_t = 1;
+    
     // PRE-GAME LOOP ---> ACTIVATE SHLM
-    shlm.BindToEngine(45.0f, 0.01f, 1000.0f);
+    shlm.BindToEngine(45.0f, 0.01f, 5000.0f);
 
-    shlm.Load_Cubemap_GPU_ComputeShader_Extended();
+    SatelliteAnalyzer SatelliteImageAnalyze;
+    ImageService* ims = ImageService::GetService();
 
-    auto ims = ImageService::GetService();
+    bool mprint = true;
 
-    auto IMG_raw_pixels = ims->ExtractPixelData(IMG_TYPE::TIFF, "resources/innsbruck10.tif");
-    auto IMG_raw_dim = ims->GetImageDimensions(IMG_TYPE::TIFF, "resources/innsbruck10.tif");
-    auto IMG_mask_pixels = ims->ExtractPixelData(IMG_TYPE::PNG, "resources/innsbruck10_mask.png");
-    auto IMG_mask_dim = ims->GetImageDimensions(IMG_TYPE::PNG, "resources/innsbruck10_mask.png");
-    std::cout << "IMG RAW DIM: " << IMG_raw_dim.first << "x" << IMG_raw_dim.second <<" px: "<<IMG_raw_pixels.size() << "\n";
-    std::cout << "IMG MASK DIM: " << IMG_mask_dim.first << "x" << IMG_mask_dim.second << " px: " << IMG_mask_pixels.size() << "\n";
+    bool init_global_sys = false;
 
-    ShadowAnalyzer ShdwAnalyze;
-    ShdwAnalyze.PushInQueue(
-        IMG_raw_pixels, IMG_raw_dim.first, IMG_raw_dim.second,
-        IMG_mask_pixels, IMG_mask_dim.first, IMG_mask_dim.second
-    );
-    AnalysisResult a;
-    ShdwAnalyze.AnalyzeFromQueue(a);
-    ShdwAnalyze.SaveShadowMaskToDisk(*a.shadow_mask, "resources/shadow_mask_buildings.png");
-    ShdwAnalyze.SaveHeightmapToDisk(*a.heightmap_buildings, "resources/heightmap_buildings.png", (float)__PI * 35.0f / 180.0f);
+    float azimuth = 0.5f, elevation = 0.9f;
+
+    // IMGUI
+    GUI_SERVICE guis;
+    guis.LoadImGui(engine->GetWindow(),"#version 430");
+    guis.TestImGui();
+    guis.BindToEngine(engine);
+    //
 
     while (!engine->windowShouldClose()) {
 
-        CommandBuffer::ProcessPyRenderCommands(engine->getScene());
+        if (Camera::StopMotion == false && __PROCESS_PX_HALT_REQUEST == false) {
+            
+            CommandBuffer::ProcessPyRenderCommands(engine->getScene());
+            CommandBuffer::ProcessPyPixelCommands();
+            CommandBuffer::ProcessPyDataCommands();
 
-        // GAME-LOOP CODE HERE
-        engine->Render( 
-            t / 64.0f * 12.0f  + 8.0f
-        );
-
-        t += 0.01f;
-
-        //std::cout << t / 64.0f * 24.0f << " TIME \n";
-        if (t > 64.0f) {
-            t = 0.0f;
         }
+        if (__ENV_RESHADE_REQUEST == true) {
+            bool reshaded = ReshadeAndUpdateScene(engine, SatelliteImageAnalyze, shlm, true);
+            if (reshaded) {
+                std::cout << "+++++++++++++++++++ [RESHADE REQUEST FINALIZED] +++++++++++++++++++++++++\n";
+                __ENV_RESHADE_REQUEST.store(false);
+                init_global_sys = true;
+                //shlm.ProcessEntireYear(24*365);
+            }
+        }
+
+        engine->initGameFrame();
+        // GAME-LOOP CODE HERE
+        //
+        // ENGINE RENDER FUNCTION
+        //engine->setSunAzimuthAndElevation(azimuth, elevation);
+        engine->Render();
+        
+        ctrl_t++;
+
+        if (ctrl_t >= frames_t && init_global_sys) {
+            t++;
+            ctrl_t = 0;
+            mprint = true;
+            /*
+            if (t > 0 && t % 24 == 0) {
+                t += SHLM::SkipN_Days * 24;
+            }
+            */
+        }
+        /*
+        static int last_printed_month = -1;
+        int current_month = t / (24 * 30);
+        
+        if (current_month > last_printed_month && mprint) {
+            last_printed_month = current_month;
+            mprint = false;
+            std::cout << "[SOLAR::TMY] Typical meteorological year progress: "
+                << 100.0f * float(t) / float(maxt) << "%\n";
+        }
+        
+        if (__PROCESS_PX_HALT_REQUEST == true) {
+            // Tipical meteorological year ended, all data was accumulated
+            std::cout << "[SOLAR::TMY] Typical meteorological year ended, all data was gathered ---------------------\n";
+            shlm.ResetPipelineForNextImage();
+            t = 0;
+            glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+            //DebugAllTex(engine);
+            __PROCESS_PX_HALT_REQUEST.store(false);
+            init_global_sys = false;
+        }
+        */
     }
 
     python_should_run.store(false);
     pythonWorker.Deactivate();
 
+    guis.ShutdownImGui();
     engine->EngineTerminate();
 
     return 0;

@@ -24,6 +24,8 @@ private:
 
 public:
 
+	static bool SCENE_GEOMETRY_UPDATE;
+
 	std::mutex& GetMutex() {
 		return sceneMutex;
 	}
@@ -50,6 +52,9 @@ public:
 
 	const std::vector<AVertex>& GetVBO_Vector();
 	const std::vector<GLuint>& GetEBO_Vector();
+
+	void ClearVBO();
+	void ClearEBO();
 
 	void ResetUpdateStatus();
 };

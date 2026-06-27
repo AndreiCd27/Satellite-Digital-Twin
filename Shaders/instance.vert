@@ -2,7 +2,7 @@
 layout (location = 0) in vec3 APosition;
 layout (location = 1) in vec4 AColor;
 layout (location = 2) in vec3 ANormal;
-layout (location = 3) in vec2 AUV;
+layout (location = 3) in uint AUV;
 
 uniform mat4 perspectiveMatrix;
 uniform vec3 CamPosition;

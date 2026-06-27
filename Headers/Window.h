@@ -1,4 +1,7 @@
 
+
+#pragma once
+
 #include "precompile.h"
 
 class Window {

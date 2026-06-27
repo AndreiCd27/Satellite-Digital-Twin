@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <iostream>
 
-constexpr int DEF_STAGES = 7;
+constexpr int DEF_STAGES = 8;
 
 // Stage 0 ---> Engine3D::SetupWindow()
 constexpr int WINDOW_SETUP_STAGE = 0;
@@ -28,6 +28,9 @@ constexpr int CAMERA_INPUT_STAGE = 5;
 
 // Stage 6 ---> Engine3D::RenderInstances()
 constexpr int RENDER_INSTANCES_STAGE = 6;
+
+// Stage 7 ---> IMGUI
+constexpr int GUI_INSTANCES_STAGE = 7;
 
 class ConfigException : public std::runtime_error {
 public:

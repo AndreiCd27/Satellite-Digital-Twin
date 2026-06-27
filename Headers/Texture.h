@@ -9,14 +9,24 @@ class Texture {
 protected:
 	GLuint TexID;
     int width = 0, height = 0;
-
-    void GenTex2D();
-    void CreateTex2D(GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR) const;
+    GLenum m_format;
+    GLint m_internalFormat;
 
 public:
 
     Texture() = default;
     Texture(int width, int height);
+
+    void SetWidth(int w) { width = w; };
+    void SetHeight(int h) { height = h; };
+
+    void GenTex2D();
+    void GenTex2D(int w, int h);
+
+    void CreateTex2D(GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR);
+    void CreateTex2D(int w, int h, GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR);
+
+    void CreateStorageTex2D(int w, int h, GLint InternalFormat);
 
     void SetupTexture(GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR);
     void SetupTexture(GLint InternalFormat, GLenum Format, GLenum type,
@@ -31,6 +41,8 @@ public:
 
     int GetWidth() const{ return width; };
     int GetHeight() const{ return height; };
+
+    void BindImage(unsigned int unit, unsigned int access) const;
 
     void Delete();
 };

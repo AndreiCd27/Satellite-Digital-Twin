@@ -13,17 +13,11 @@ struct Sphere {
 
 layout(std430, binding = 0) buffer SphereBuffer {
     uint sphereCount;
-    uint pad0;
-    uint pad1;
-    uint pad2;
+    uint pad0; uint pad1; uint pad2;
     Sphere spheres[];
 };
 
 int GetInstance(ivec3 minPos, int size, ivec3 gridRes) {
-    
-    // Look into the instanceID 3D texture
-    // We have to round the result to prevent hardware interpolation errors
-
     ivec3 center = clamp(minPos + ivec3(size / 2), ivec3(0), gridRes - 1);
     int id = texelFetch(InstanceTex, center, 0).r;
     if (id >= 0) return id;
@@ -31,14 +25,10 @@ int GetInstance(ivec3 minPos, int size, ivec3 gridRes) {
 }
 
 void main() {
-
-    // This thread runs PER-VOXEL (4x4x4 area of voxels evaluated per work group)
-
     ivec3 gridRes = textureSize(InstanceTex, 0); 
     ivec3 voxelPos = ivec3(gl_GlobalInvocationID);
     if (voxelPos.x >= gridRes.x || voxelPos.y >= gridRes.y || voxelPos.z >= gridRes.z) return;
 
-    // Threshold for noise, if the voxel is ALMOST empty, discard
     float baseFill = texelFetch(VoxelTex, voxelPos, 0).r;
     if (baseFill <= 0.05) return; 
 
@@ -46,25 +36,19 @@ void main() {
     ivec3 targetMinPos = voxelPos;
     float finalFill = baseFill;
 
-    // Sphere Accept Threshold, a value bigger than MERGE_THRESHOD in fill value accepts the sphere
-    const float MERGE_THRESHOLD = 0.50; 
+    // Prag de merge conservator. Îl coborâm ușor la 0.45 pentru a forța 
+    // clădirile să se compacteze în blocuri solide fără găuri interne.
+    const float MERGE_THRESHOLD = 0.45; 
 
-    // Start with Level Of Detail MAX and decrease it
-    // Each LOD coresponds to a 2^LOD x 2^LOD x 2^LOD size voxel
-    // LOD = 0 => voxel is at base size
-    // For each voxel at any LOD try to put a sphere inside if the AREA is almost full
-    // GPU combines fill values for every LOD
-
-    // Only look till LOD = 1 to save time
-
-    for (int lod = LODmax; lod > 0; lod--) {
+    for (int lod = LODmax; lod >= 1; lod--) { // Coborâm până la LOD 1 inclusiv
         int size = 1 << lod;
         ivec3 lodMinPos = (voxelPos / size) * size;
         
-        vec3 uvw = (vec3(lodMinPos) + vec3(float(size) * 0.5)) / vec3(gridRes);
-        float mipFill = textureLod(VoxelTex, uvw, lod).r;
+        // CORECTIE: Folosim texelFetch direct pe nivelul de mipmap (LOD) respectiv, 
+        // în loc de textureLod, pentru a evita interpolarea hardware care dilua valorile clădirilor.
+        ivec3 lodVoxelCoord = lodMinPos >> lod; 
+        float mipFill = texelFetch(VoxelTex, lodVoxelCoord, lod).r;
 
-        // If region is sufficiently big, merge into a bigger sphere
         if (mipFill >= MERGE_THRESHOLD) {
             targetLOD = lod;
             targetMinPos = lodMinPos;
@@ -73,9 +57,7 @@ void main() {
         }
     }
 
-    // Only ONE thread writes to the buffer (to avoid race conditions)
-    //
-
+    // Doar thread-ul din originea cubului compactat scrie sfeera
     if (voxelPos == targetMinPos) {
         int instanceID = GetInstance(targetMinPos, 1 << targetLOD, gridRes);
         
@@ -87,11 +69,16 @@ void main() {
                 vec3 centerVoxel = vec3(targetMinPos) + vec3(float(currentSize) * 0.5);
                 vec3 normCoord = centerVoxel / vec3(gridRes);
 
-                // Scale the sphere radius by cuberoot(fill)
-                // This scales the spheres correctly to not create too big shadow volumes
+                // CORECTIE RADIALĂ: Pentru umbre continue (fără dispersie), raza sferei
+                // trebuie să acopere complet diagonala cubului voxelului în spațiul normalizat.
+                // Factorul ideal pentru a înscrie un cub într-o sferă este sqrt(3) / 2 ≈ 0.866.
+                // Folosim un multiplicator conservator de 0.75-0.85 pentru a forța suprapunerea sferelor vecine.
+                float radius = (float(currentSize) / float(gridRes.x)) * 0.75;
 
-                float volumeCorrection = pow(finalFill, 0.33333);
-                float radius = (float(currentSize) / float(gridRes.x)) * 0.5 * volumeCorrection;
+                // Dacă gradul de umplere e foarte mare, mărim sfera ca să fim siguri că nu lasă crăpături
+                if (finalFill > 0.75) {
+                    radius *= 1.1; 
+                }
 
                 spheres[idx].pos_rad = vec4(normCoord, radius);
                 spheres[idx].instanceID = ivec4(instanceID, 0, 0, 0);
