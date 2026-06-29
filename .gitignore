@@ -3,6 +3,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# image segmentation weights
+Python/weights
+Python/openvino_intelgpu
 # test_images directory
 test_images
 output_images
