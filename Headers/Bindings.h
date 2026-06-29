@@ -13,6 +13,8 @@
 
 extern std::atomic<bool> __ENV_RESHADE_REQUEST;
 
+extern std::atomic<bool> __SENT_PX_COMMAND;
+
 extern std::atomic<bool> __PROCESS_PX_HALT_REQUEST;
 
 extern std::atomic<bool> python_should_run;

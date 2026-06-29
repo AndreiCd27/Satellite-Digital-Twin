@@ -9,7 +9,7 @@ class Texture {
 protected:
 	GLuint TexID;
     int width = 0, height = 0;
-    GLenum m_format;
+    GLenum m_format, m_type = GL_UNSIGNED_BYTE;
     GLint m_internalFormat;
 
 public:
@@ -45,6 +45,7 @@ public:
     void BindImage(unsigned int unit, unsigned int access) const;
 
     void Delete();
+    void Clear();
 };
 
 class ShadowSampler : public Texture {

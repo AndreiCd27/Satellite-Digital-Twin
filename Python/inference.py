@@ -20,6 +20,7 @@ from py_engine3d import should_halt
 from py_engine3d import reshade
 from py_engine3d import push_texture_pixels
 from py_engine3d import push_tmy_data
+from py_engine3d import sent_px_cmd
 
 import tmy_data
 
@@ -264,7 +265,6 @@ def process_and_triangulate_image(image_path):
     if global_vertices:
         print(f"\n[RENDERING] {len(global_vertices)} vertices, {len(global_indices) // 3} triangles")
         set_geometry(global_vertices, global_indices)
-        reshade()
     else:
         print("\n[RENDERING] No buildings detected")
     # Send building mask to rendering pipeline as a GL_TEXTURE
@@ -280,9 +280,13 @@ def process_and_triangulate_image(image_path):
     # Send the matrix as a GL_TEXTURE for elevation (heightmap)
     push_texture_pixels(terrain_float32, "heightmap")
 
+    sent_px_cmd()
+
     push_tmy_data(tmy_tex, sun_tex)
     
     time.sleep(2)
+
+    reshade()
 
 def main():
     image_paths = GET_INRIA_TEST_IMG_PATHS()

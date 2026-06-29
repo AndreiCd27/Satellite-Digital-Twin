@@ -16,6 +16,8 @@ class SatelliteAnalyzer {
 
     bool AnalysisDone = true;
 
+    const int targetWidth, targetHeight;
+
     const float __PI = 3.14159265359f;
 
     Raymarcher RayMarchOperation;
@@ -95,7 +97,11 @@ public:
         AnalysisDone = false;
     }
 
+    void InitTextures();
     void ResetTextures();
+    void DeleteTextures();
+
+    void ForcePipelineFlush();
 
     static void ResetGLContexts();
 };

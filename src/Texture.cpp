@@ -8,6 +8,30 @@ void Texture::Delete() {
 	glDeleteTextures(1, &TexID);
 }
 
+void Texture::Clear() {
+	glBindTexture(GL_TEXTURE_2D, TexID);
+
+	int channels = 1;
+	if (m_format == GL_RG || m_format == GL_RG_INTEGER) channels = 2;
+	else if (m_format == GL_RGB || m_format == GL_RGB_INTEGER) channels = 3;
+	else if (m_format == GL_RGBA || m_format == GL_RGBA_INTEGER) channels = 4;
+
+	int bytesPerChannel = 1;
+	if (m_type == GL_FLOAT || m_type == GL_UNSIGNED_INT || m_type == GL_INT) {
+		bytesPerChannel = 4;
+	}
+	else if (m_type == GL_SHORT || m_type == GL_UNSIGNED_SHORT) {
+		bytesPerChannel = 2;
+	}
+
+	size_t totalBytes = static_cast<size_t>(width) * height * channels * bytesPerChannel;
+
+	std::vector<uint8_t> emptyData(totalBytes, 0);
+
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, m_format, m_type, emptyData.data());
+}
+
+
 void Texture::GenTex2D() {
 
 	glGenTextures(1, &TexID);
@@ -36,6 +60,7 @@ void Texture::CreateTex2D(GLint InternalFormat, GLenum Format, GLenum type, void
 
 	m_format = Format;
 	m_internalFormat = InternalFormat;
+	m_type = type;
 	glTexImage2D(GL_TEXTURE_2D, 0, InternalFormat, width, height, 0, Format, type, dataPTR);
 }
 void Texture::CreateTex2D(int w, int h, GLint InternalFormat, GLenum Format, GLenum type, void* dataPTR) {
@@ -43,6 +68,7 @@ void Texture::CreateTex2D(int w, int h, GLint InternalFormat, GLenum Format, GLe
 	height = h;
 	m_format = Format;
 	m_internalFormat = InternalFormat;
+	m_type = type;
 	glTexImage2D(GL_TEXTURE_2D, 0, InternalFormat, w, h, 0, Format, type, dataPTR);
 }
 void Texture::CreateStorageTex2D(int w, int h, GLint InternalFormat) {
@@ -60,6 +86,7 @@ void Texture::SetupTexture(GLint InternalFormat, GLenum Format, GLenum type, voi
 	GenTex2D();
 	m_format = Format;
 	m_internalFormat = InternalFormat;
+	m_type = type;
 	CreateTex2D(InternalFormat, Format, type, dataPTR);
 }
 
@@ -69,6 +96,7 @@ void Texture::SetupTexture(GLint InternalFormat, GLenum Format, GLenum type,
 	GenTex2D();
 	m_format = Format;
 	m_internalFormat = InternalFormat;
+	m_type = type;
 
 	MinMagFilter(MIN_FILTER, MAG_FILTER);
 
@@ -82,6 +110,7 @@ void Texture::SetupTexture(GLint InternalFormat, GLenum Format, GLenum type,
 	GenTex2D();
 	m_format = Format;
 	m_internalFormat = InternalFormat;
+	m_type = type;
 
 	MinMagFilter(MIN_FILTER, MAG_FILTER);
 	WrapFilter(WRAP_S, WRAP_T);

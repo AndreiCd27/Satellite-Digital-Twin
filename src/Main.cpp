@@ -136,18 +136,16 @@ static bool ReshadeAndUpdateScene(Engine3D* engine, SatelliteAnalyzer& Satellite
     auto bmask_tex = CommandBuffer::GetTexSlot("buildings_mask");
 
     if (terrain_tex == nullptr || bmask_tex == nullptr) return false;
-
     if (__ENV_RESHADE_REQUEST == false) return false;
-    while (Scene::SCENE_GEOMETRY_UPDATE == false) {
-        CommandBuffer::ProcessPyRenderCommands(engine->getScene());
-    }
-    Scene::SCENE_GEOMETRY_UPDATE = false;
-    if (geom) engine->UpdateBuffers();
+
+    __PROCESS_PX_HALT_REQUEST.store(true);
+    std::cout << "[RENDER] Reshade requested. Locking Python intake...\n";
 
     std::cout << "[RENDER] ---------------------------------------------------------------------\n";
     std::cout << "[RENDER] Analyzing satellite image...\n";
     std::cout << "[RENDER] ---------------------------------------------------------------------\n";
-    //SatelliteAnalyzer::ResetGLContexts();
+    glFinish();
+    SatelliteAnalyzer::ResetGLContexts();
     SatelliteImageAnalyze.ResetAnalysisState();
     SatelliteImageAnalyze.AnalyzeFromQueue();
 
@@ -167,6 +165,13 @@ static bool ReshadeAndUpdateScene(Engine3D* engine, SatelliteAnalyzer& Satellite
     std::cout << "[RENDER] ---------------------------------------------------------------------\n";
     glFinish();
 
+    while (Scene::SCENE_GEOMETRY_UPDATE == false) {
+        CommandBuffer::ProcessPyRenderCommands(engine->getScene());
+    }
+
+    Scene::SCENE_GEOMETRY_UPDATE = false;
+    if (geom) engine->UpdateBuffers();
+
     if (geom) {
         shlm.ElevateVBO();
 
@@ -174,7 +179,7 @@ static bool ReshadeAndUpdateScene(Engine3D* engine, SatelliteAnalyzer& Satellite
         engine->getScene()->ClearEBO();
     }
 
-    DebugAllTex(engine);
+    //DebugAllTex(engine);
 
     return true;
 }
@@ -212,19 +217,11 @@ int main() {
 
     engine->setBackground(0.0f, 0.0f, 0.0f, 1.0f);
     
-    int t = 0;
-    const int maxt = 360 * 24;
-    // time control variables relative to frames
-    int ctrl_t = 0;
-    int frames_t = 1;
-    
     // PRE-GAME LOOP ---> ACTIVATE SHLM
     shlm.BindToEngine(45.0f, 0.01f, 5000.0f);
 
     SatelliteAnalyzer SatelliteImageAnalyze;
     ImageService* ims = ImageService::GetService();
-
-    bool mprint = true;
 
     bool init_global_sys = false;
 
@@ -245,58 +242,48 @@ int main() {
             CommandBuffer::ProcessPyPixelCommands();
             CommandBuffer::ProcessPyDataCommands();
 
+            if (__SENT_PX_COMMAND == true) {
+                std::cout << "\n[MAIN THEREAD PIPELINE] WAITING FOR PIXEL DATA ON MAIN THREAD...\n";
+                while (__SENT_PX_COMMAND == true || !PyPixelLoad.Empty()) {
+                    CommandBuffer::ProcessPyPixelCommands();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+
+                CommandBuffer::ProcessPyPixelCommands();
+                glFinish();
+            }
         }
         if (__ENV_RESHADE_REQUEST == true) {
             bool reshaded = ReshadeAndUpdateScene(engine, SatelliteImageAnalyze, shlm, true);
             if (reshaded) {
-                std::cout << "+++++++++++++++++++ [RESHADE REQUEST FINALIZED] +++++++++++++++++++++++++\n";
+                std::cout << "\n[ RESHADE REQUEST FINALIZED ] -------"<<
+                    "----------------- [ PRESS C TO CONTINUE ] -------\n";
                 __ENV_RESHADE_REQUEST.store(false);
                 init_global_sys = true;
-                //shlm.ProcessEntireYear(24*365);
             }
         }
 
         engine->initGameFrame();
         // GAME-LOOP CODE HERE
-        //
-        // ENGINE RENDER FUNCTION
-        //engine->setSunAzimuthAndElevation(azimuth, elevation);
-        engine->Render();
         
-        ctrl_t++;
 
-        if (ctrl_t >= frames_t && init_global_sys) {
-            t++;
-            ctrl_t = 0;
-            mprint = true;
-            /*
-            if (t > 0 && t % 24 == 0) {
-                t += SHLM::SkipN_Days * 24;
-            }
-            */
-        }
-        /*
-        static int last_printed_month = -1;
-        int current_month = t / (24 * 30);
+
+        // ENGINE RENDER FUNCTION
+        engine->Render();
+
         
-        if (current_month > last_printed_month && mprint) {
-            last_printed_month = current_month;
-            mprint = false;
-            std::cout << "[SOLAR::TMY] Typical meteorological year progress: "
-                << 100.0f * float(t) / float(maxt) << "%\n";
-        }
-        
-        if (__PROCESS_PX_HALT_REQUEST == true) {
-            // Tipical meteorological year ended, all data was accumulated
-            std::cout << "[SOLAR::TMY] Typical meteorological year ended, all data was gathered ---------------------\n";
+        if (__PROCESS_PX_HALT_REQUEST == true && 
+            glfwGetKey(engine->GetWindow()->getWindow(), GLFW_KEY_C) == GLFW_PRESS) {
+
+            //SatelliteImageAnalyze.ResetTextures();
             shlm.ResetPipelineForNextImage();
-            t = 0;
             glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
-            //DebugAllTex(engine);
+
+            std::cout << "[MAIN_THREAD] Continue...\n";
             __PROCESS_PX_HALT_REQUEST.store(false);
             init_global_sys = false;
         }
-        */
+        
     }
 
     python_should_run.store(false);

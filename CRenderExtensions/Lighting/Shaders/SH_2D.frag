@@ -51,7 +51,7 @@ float GetVisibility2D(vec2 uv) {
     return clamp(Vis, 0.0, 1.0);
 }
 
-bool IsInShadowRaymarched(vec3 startPosNorm, vec2 size) {
+bool IsInShadowRaymarched(vec3 startPosNorm, vec2 size, vec3 N) {
     vec3 worldStep = normalize(LightDir) * MetersPerPixel;
     vec3 texStep = vec3(worldStep.x / size.x, worldStep.y, worldStep.z / size.y);
     
@@ -59,7 +59,6 @@ bool IsInShadowRaymarched(vec3 startPosNorm, vec2 size) {
         return false; 
     }
 
-    vec3 N = normalize(vertNormal);
     vec3 L = normalize(LightDir);
     float dotNL = max(0.0, dot(N, L));
 
@@ -90,7 +89,10 @@ bool IsInShadowRaymarched(vec3 startPosNorm, vec2 size) {
 }
 
 void main() {
-    vec3 N = normalize(vertNormal);
+
+    //vec3 N = normalize(vertNormal);
+	vec3 N = normalize(cross(dFdx(vertPos.xyz), dFdy(vertPos.xyz)));
+
     vec2 hmapSize = vec2(textureSize(UnifiedHeightmap, 0));
 
     vec3 L = normalize(LightDir);
@@ -104,7 +106,7 @@ void main() {
     // Calculate shadow via raymarching
     float shadowFactor = 1.0;
     if (lambert > 0.0) {
-        shadowFactor = IsInShadowRaymarched(startPos, hmapSize) ? 0.0 : 1.0;
+        shadowFactor = IsInShadowRaymarched(startPos, hmapSize, N) ? 0.0 : 1.0;
     } else {
         shadowFactor = 0.0;
     }
@@ -116,11 +118,11 @@ void main() {
     ambientVis = mix(1.0, ambientVis, AmbientShadowIntensity);
 
     vec4 texColor = texture(SatelliteTex, mapUV);
-    vec3 baseColor = color.rgb * texColor.rgb;
+    vec3 baseColor = color.rgb * (1.0 - sfactor) + texColor.rgb * sfactor;
 
-    vec3 directLighting = baseColor * (lambert * shadowFactor * DirectLightIntensity);
-    vec3 ambientLighting = baseColor * (ambientVis * AmbientLightIntensity);
+    float directLighting = lambert * shadowFactor * DirectLightIntensity;
+    float ambientLighting = ambientVis * AmbientLightIntensity;
 
     // Final color accumulation
-    FragColor = vec4(directLighting + ambientLighting, 1.0);
+    FragColor = vec4(baseColor * min(directLighting + ambientLighting, 1.0), 1.0);
 }

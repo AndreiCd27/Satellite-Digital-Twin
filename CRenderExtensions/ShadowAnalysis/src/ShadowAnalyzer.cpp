@@ -2,7 +2,7 @@
 #include "ShadowAnalyzer.h"
 
 
-SatelliteAnalyzer::SatelliteAnalyzer(int targetWidth, int targetHeight) {
+SatelliteAnalyzer::SatelliteAnalyzer(int targetWidth, int targetHeight) : targetWidth(targetWidth), targetHeight(targetHeight) {
     //std::cout << "Satellite Analyzer instantiated\n";
 
     DirectionalAnalyzer.Setup((path + "/ComputeShaders/azimuth.comp").c_str(), "Directional Analyzer");
@@ -14,10 +14,22 @@ SatelliteAnalyzer::SatelliteAnalyzer(int targetWidth, int targetHeight) {
     ShadowDiffShader.Setup((path + "/ComputeShaders/compute_shadow_diff.comp").c_str(), "Shadow Diff Compute");
     CombineHeightmap.Setup((path + "/ComputeShaders/combine_heightmap.comp").c_str(), "Combine Heightmap");
 
+    InitTextures();
+
     // Azimuth SSBO
     ssboAngleScores = DirectionalAnalyzer.CreateSSBO();
     DirectionalAnalyzer.AllocateEmptySSBO<unsigned int>(NUM_DIRECTIONS, ssboAngleScores);
 
+    // SSBO Shadow Loss/Diff
+    glGenBuffers(1, &ssboShadowDiff);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboShadowDiff);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 2 * sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    visualizeShader.Setup((path + "/Shaders/render_analysis.vert").c_str(), (path + "/Shaders/render_analysis.frag").c_str());
+}
+
+void SatelliteAnalyzer::InitTextures() {
     // Fixed texture dimensiosn
     // Shadow Mask
     shadow_mask = CommandBuffer::InitTexSlot("shadow_mask").get();
@@ -66,14 +78,6 @@ SatelliteAnalyzer::SatelliteAnalyzer(int targetWidth, int targetHeight) {
     diff_shadow_mask->MinMagFilter(GL_LINEAR, GL_LINEAR);
     diff_shadow_mask->WrapFilter(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
     diff_shadow_mask->CreateTex2D(GL_RG8, GL_RG, GL_UNSIGNED_BYTE, nullptr);
-
-    // SSBO Shadow Loss/Diff
-    glGenBuffers(1, &ssboShadowDiff);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboShadowDiff);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, 2 * sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-    visualizeShader.Setup((path + "/Shaders/render_analysis.vert").c_str(), (path + "/Shaders/render_analysis.frag").c_str());
 }
 
 int SatelliteAnalyzer::FindOptimalAzimuth(float startAngle, float endAngle, 
@@ -348,6 +352,10 @@ float SatelliteAnalyzer::CalculateShadowDiff() {
         float iou = interCnt / unionCnt;
         loss = 1.0f - iou;
     }
+
+    /* glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, 0);
+    glBindImageTexture(3, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG); */
     /*
     std::cout << "[SHADOW_LOSS] Intersection pixels: " << IoU_data[0] << " | Union pixels: " << IoU_data[1] 
         << " | IoU Loss = " << loss << "\n";
@@ -425,6 +433,10 @@ void SatelliteAnalyzer::CombineMaskTerrainHeightmap(float elevation) {
         std::cout << "[OPENGL ERROR] [METRIC HEIGHTMAP] Error after Compute Dispatch: 0x"
             << std::hex << err << " " << std::dec << 0 << "\n";
     }
+
+    /* glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, 0);
+    glBindImageTexture(1, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG32F); */
 }
 
 SatelliteAnalyzer::SearchPoint SatelliteAnalyzer::RefineAngles2D(float start_azimuth, float start_elevation) {
@@ -528,6 +540,13 @@ void SatelliteAnalyzer::Debug_uHeights() {
 void SatelliteAnalyzer::AnalyzeFromQueue() {
     if (AnalysisDone) return;
 
+    // Geometry will reset, textures will regenerate, wait untill solar output computation is finished
+    // Now we stop processing pixels input from python
+    __PROCESS_PX_HALT_REQUEST.store(true);
+
+    glFinish();
+    ForcePipelineFlush();
+    ResetGLContexts();
     ResetTextures();
 
     std::cout << "[SATELLITE_ANALYSIS] Image Analysis started! \n";
@@ -540,10 +559,6 @@ void SatelliteAnalyzer::AnalyzeFromQueue() {
     if (satellite_ptr == nullptr) return;
 
     std::cout << "[SATELLITE_ANALYSIS] Found building_mask, terrain_heightmap and satellite_image! \n";
-
-    // Geometry will reset, textures will regenerate, wait untill solar output computation is finished
-    // Now we stop processing pixels input from python
-    __PROCESS_PX_HALT_REQUEST.store(true);
 
     building_mask = bmask_ptr.get();
     terrain_heights = terrain_ptr.get();
@@ -562,13 +577,18 @@ void SatelliteAnalyzer::AnalyzeFromQueue() {
     for (auto& param : params) {
         GenerateMasks(optimal_azimuth, param.first, param.second);
 
-        //DebugCheckShadowMask();
+        // Force GPU to finish writing masks before PropagateHeight reads them
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
         PropagateHeight();
 
-        // Some average elevation angle (45 degrees = 0.785 rad) for default building heights
-        // This is just a start-up texture for the algorithm to work
+        // Force GPU to finish height propagation before combining textures
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
         CombineMaskTerrainHeightmap(0.785f);
+
+        // Force GPU to finish combining before FindElevation reads the final texture
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
         auto s = FindElevation(optimal_azimuth);
 
@@ -577,12 +597,17 @@ void SatelliteAnalyzer::AnalyzeFromQueue() {
             optimal_elevation = s.elevation;
             std::cout << "[SATELLITE_ANALYSIS] Found optimal sun elevation: " << s.elevation << " with loss: " << s.loss << "\n";
         }
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
     }
 
     CombineMaskTerrainHeightmap(optimal_elevation);
     glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT);
     Debug_uHeights();
-    glBindImageTexture(1, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+
+    for (int i = 0; i < 8; ++i) {
+        glBindImageTexture(i, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+    }
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     std::cout << "[SATELLITE_ANALYSIS] Generated metric heightmap, analysis complete!\n";
 
@@ -591,28 +616,16 @@ void SatelliteAnalyzer::AnalyzeFromQueue() {
 
 
 void SatelliteAnalyzer::ResetTextures() {
-    GLuint tempFBO;
-    glGenFramebuffers(1, &tempFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, tempFBO);
 
-    GLuint texturesR8[] = { norm_heights->GetTexID(), norm_heights_temp->GetTexID(), shadow_mask->GetTexID(), sim_shadow_mask->GetTexID() };
-    for (GLuint tex : texturesR8) {
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-        GLenum drawBuffers[] = { GL_COLOR_ATTACHMENT0 };
-        glDrawBuffers(1, drawBuffers);
+    if (shadow_mask) shadow_mask->CreateTex2D(GL_R8, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    if (shadow_mask_ref) shadow_mask_ref->CreateTex2D(GL_R8, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    if (norm_heights) norm_heights->CreateTex2D(GL_R8, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    if (norm_heights_temp) norm_heights_temp->CreateTex2D(GL_R8, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    if (u_heights) u_heights->CreateTex2D(GL_RG32F, GL_RG, GL_FLOAT, nullptr);
+    if (sim_shadow_mask) sim_shadow_mask->CreateTex2D(GL_R8, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+    if (diff_shadow_mask) diff_shadow_mask->CreateTex2D(GL_RG8, GL_RG, GL_UNSIGNED_BYTE, nullptr);
 
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-    }
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, u_heights->GetTexID(), 0);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    // Delete temp FBO
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteFramebuffers(1, &tempFBO);
-
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+    glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
 void SatelliteAnalyzer::ResetGLContexts() {
@@ -622,9 +635,42 @@ void SatelliteAnalyzer::ResetGLContexts() {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
     for (int i = 0; i < 8; ++i) {
-        glBindImageTexture(i, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R8);
+        glBindImageTexture(i, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
     }
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     glUseProgram(0);
 }
 
+void SatelliteAnalyzer::ForcePipelineFlush() {
+
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+        GL_TEXTURE_FETCH_BARRIER_BIT |
+        GL_TEXTURE_UPDATE_BARRIER_BIT |
+        GL_BUFFER_UPDATE_BARRIER_BIT);
+
+    for (int i = 0; i < 8; ++i) {
+        glActiveTexture(GL_TEXTURE0 + i);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    glActiveTexture(GL_TEXTURE0);
+
+    for (int i = 0; i < 8; ++i) {
+        glBindImageTexture(i, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+    }
+    
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    glUseProgram(0);
+
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+}
+
+
+void SatelliteAnalyzer::DeleteTextures() {
+    if (shadow_mask) shadow_mask->Delete();
+    if (shadow_mask_ref) shadow_mask_ref->Delete();
+    if (norm_heights) norm_heights->Delete();
+    if (norm_heights_temp) norm_heights_temp->Delete();
+    if (u_heights) u_heights->Delete();
+    if (sim_shadow_mask) sim_shadow_mask->Delete();
+    if (diff_shadow_mask) diff_shadow_mask->Delete();
+}

@@ -19,28 +19,22 @@ void main() {
     vec4 startData = texture(u_heights, startUV);
     float startHeight = startData.r + startData.g;
 
-    // --- FIX 1: Calculate True 3D Trigonometric Directions ---
     vec3 lightDir;
     lightDir.x = cos(ShadowAngle) * cos(ElevationAngle);
     lightDir.z = sin(ShadowAngle) * cos(ElevationAngle);
     lightDir.y = sin(ElevationAngle); // Vertical upward velocity component
 
-    // Get the horizontal heading direction
     vec2 sunDir = normalize(lightDir.xz);
     
-    // Convert 1 pixel step in world units to exact UV space mapping offsets
     float worldStepMeters = MetersPerPixel; 
     vec2 uvStep = (sunDir * worldStepMeters) / (vec2(size) * MetersPerPixel);
 
-    // --- FIX 2: Calculate the precise Vertical Slope per Meter ---
-    // Instead of tan(), we find the height change relative to horizontal distance
     float horizontalLength = length(lightDir.xz);
     float heightSlopePerMeter = (horizontalLength > 0.0001) ? (lightDir.y / horizontalLength) : 1000.0;
 
     bool isShadowed = false;
-    float rayBias = 0.05; // Small threshold offset to prevent self-shadowing acne
+    float rayBias = 0.05;
 
-    // Raymarch outward along the sun slope vector path
     for (int step = 1; step <= MaxRaySteps; step++) {
         vec2 sampleUV = startUV + (uvStep * float(step));
 
@@ -49,11 +43,8 @@ void main() {
             break;
         }
 
-        // Exact horizontal distance traversed in true meters
         float horizontalDistanceMeters = float(step) * worldStepMeters;
 
-        // --- FIX 3: Linear Height Tracking ---
-        // This remains linear and will not explode as your angle changes
         float currentRayHeight = startHeight + rayBias + (horizontalDistanceMeters * heightSlopePerMeter);
 
         vec4 h_data = texture(u_heights, sampleUV);

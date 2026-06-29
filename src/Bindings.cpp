@@ -5,6 +5,7 @@
 std::atomic<bool> python_should_run{ true };
 std::atomic<bool> __ENV_RESHADE_REQUEST{ true };
 std::atomic<bool> __PROCESS_PX_HALT_REQUEST{ false };
+std::atomic<bool> __SENT_PX_COMMAND{ false };
 
 MutexQueue<RenderCommand> PyRenderLoad;
 MutexQueue<TextureCommand> PyPixelLoad;
@@ -94,7 +95,7 @@ void CommandBuffer::ProcessPyPixelCommands() {
 
     while (auto cmd = PyPixelLoad.TryPop()) {
 
-        std::cout << "[RENDER] PROCESSED PIXELS TO TEXTURE COMMAND FROM PYTHON\n";
+        std::cout << "\n[RENDER] PROCESSED PIXELS TO TEXTURE COMMAND FROM PYTHON\n";
 
         if (TextureSlots.find(cmd->textureKey) == TextureSlots.end()) {
             auto t = std::make_shared<Texture>();
@@ -144,6 +145,8 @@ void CommandBuffer::ProcessPyPixelCommands() {
 
         targetTex->MinMagFilter(GL_LINEAR, GL_LINEAR);
         targetTex->WrapFilter(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
+
+        __SENT_PX_COMMAND.store(false);
     }
 }
 
@@ -151,7 +154,9 @@ void CommandBuffer::ProcessPyPixelCommands() {
 PYBIND11_EMBEDDED_MODULE(py_engine3d, m) {
     m.doc() = "TinyCRender Python Worker API";
 
-
+    m.def("sent_px_cmd", []() {
+        __SENT_PX_COMMAND.store(true);
+    });
     m.def("should_run", []() {
         return python_should_run.load();
     });

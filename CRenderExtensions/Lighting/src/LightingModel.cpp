@@ -326,7 +326,6 @@ void SHLM::Load_Cubemap_GPU_ComputeShader_Extended() {
 void SHLM::SH_Heightmap_Shading_Compute() {
 
 	//__PY_HALT_REQUEST.store(true);
-
 	while (!PyPixelLoad.Empty()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
