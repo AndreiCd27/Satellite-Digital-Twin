@@ -50,5 +50,7 @@ class GeoExporter {
 	GeoData* geodata = nullptr;
 public:
 	GeoExporter(GeoData* geodata) : geodata(geodata) {}
+	float GetLon(float gl_x);
+	float GetLat(float gl_z);
 	void ExportVBOtoGeoJSON(Engine3D* engine, const std::string& filename);
 };

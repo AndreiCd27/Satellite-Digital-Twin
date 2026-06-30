@@ -3,6 +3,30 @@
 
 using json = nlohmann::json;
 
+float GeoExporter::GetLon(float gl_x) {
+    float width = (float)geodata->GeoFile.width;
+    float res = geodata->GeoFile.MetersPerPixel;
+    float widthMeters = width * res;
+    float normalizedX = (gl_x + (widthMeters * 0.5f)) / widthMeters;
+    if (normalizedX < 0.0f) normalizedX = 0.0f;
+    if (normalizedX > 1.0f) normalizedX = 1.0f;
+    float deltaLon = geodata->BBox.lon1 - geodata->BBox.lon0;
+    return geodata->BBox.lon0 + (normalizedX * deltaLon);
+}
+
+float GeoExporter::GetLat(float gl_z) {
+    float height = (float)geodata->GeoFile.height;
+    float res = geodata->GeoFile.MetersPerPixel;
+    float heightMeters = height * res;
+    float normalizedZ = (gl_z + (heightMeters * 0.5f)) / heightMeters;
+    if (normalizedZ < 0.0f) normalizedZ = 0.0f;
+    if (normalizedZ > 1.0f) normalizedZ = 1.0f;
+    float deltaLat = geodata->BBox.lat1 - geodata->BBox.lat0;
+    return geodata->BBox.lat1 - (normalizedZ * deltaLat);
+}
+
+
+
 void GeoExporter::ExportVBOtoGeoJSON(Engine3D* engine, const std::string& filename) {
 	// Assuming you have your VBO bound
 	glBindBuffer(GL_ARRAY_BUFFER, engine->GetVBO_ID());
@@ -15,6 +39,10 @@ void GeoExporter::ExportVBOtoGeoJSON(Engine3D* engine, const std::string& filena
 	glGetBufferSubData(GL_ARRAY_BUFFER, 0, bufferSize, vertices.data());
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+    int width = geodata->GeoFile.width;
+    int height = geodata->GeoFile.height;
+    float res = geodata->GeoFile.MetersPerPixel;
+
     // Initialize the root GeoJSON feature object
     json geojson = {
         {"type", "FeatureCollection"},
@@ -22,9 +50,9 @@ void GeoExporter::ExportVBOtoGeoJSON(Engine3D* engine, const std::string& filena
             {"filename", geodata->GeoFile.filename},
             {"filepath", geodata->GeoFile.filepath},
             {"CRS", geodata->GeoFile.CRS},
-            {"resolution", geodata->GeoFile.MetersPerPixel},
-            {"width", geodata->GeoFile.width},
-            {"height", geodata->GeoFile.height}
+            {"resolution", res},
+            {"width", width},
+            {"height", height}
         }},
         {"bbox", {
             geodata->BBox.lon0,
@@ -57,10 +85,10 @@ void GeoExporter::ExportVBOtoGeoJSON(Engine3D* engine, const std::string& filena
             float terrain_elevation = total_altitude - building_height;
 
             json triangleRing = json::array({
-                { v0.POS.x, v0.POS.z, v0.POS.y },
-                { v1.POS.x, v1.POS.z, v1.POS.y },
-                { v2.POS.x, v2.POS.z, v2.POS.y },
-                { v0.POS.x, v0.POS.z, v0.POS.y }
+                { GetLon(v0.POS.x), GetLat(v0.POS.z), v0.POS.y },
+                { GetLon(v1.POS.x), GetLat(v1.POS.z), v1.POS.y },
+                { GetLon(v2.POS.x), GetLat(v2.POS.z), v2.POS.y },
+                { GetLon(v0.POS.x), GetLat(v0.POS.z), v0.POS.y }
                 });
 
             json feature = {
@@ -85,10 +113,10 @@ void GeoExporter::ExportVBOtoGeoJSON(Engine3D* engine, const std::string& filena
             uint32_t original_id = id0; // ID for Building Base OR Terrain
 
             json triangleRing = json::array({
-                { v0.POS.x, v0.POS.z, v0.POS.y },
-                { v1.POS.x, v1.POS.z, v1.POS.y },
-                { v2.POS.x, v2.POS.z, v2.POS.y },
-                { v0.POS.x, v0.POS.z, v0.POS.y }
+                { GetLon(v0.POS.x), GetLat(v0.POS.z), v0.POS.y },
+                { GetLon(v1.POS.x), GetLat(v1.POS.z), v1.POS.y },
+                { GetLon(v2.POS.x), GetLat(v2.POS.z), v2.POS.y },
+                { GetLon(v0.POS.x), GetLat(v0.POS.z), v0.POS.y }
                 });
 
             json feature = {
@@ -105,7 +133,7 @@ void GeoExporter::ExportVBOtoGeoJSON(Engine3D* engine, const std::string& filena
                     {"coordinates", json::array({ json::array({ triangleRing }) })}
                 }}
             };
-            geojson["features"].push_back(feature);
+            if (id0 == 1) geojson["features"].push_back(feature); // Fetch only Terrain
         }
     }
 

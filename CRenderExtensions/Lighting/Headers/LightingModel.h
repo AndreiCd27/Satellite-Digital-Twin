@@ -26,6 +26,23 @@ constexpr int SphereDirCount = 64;
 
 // Spherical Harmonic Lighting Model (SHLM)
 
+struct LightParameters {
+	// Light parameters
+	float DirectShadowStrength = 0.85;
+	float AmbientShadowContrast = 1.0;
+	float AmbientShadowIntensity = 0.7;
+	float DirectLightIntensity = 1.0; // Exposure parameter for sun light
+	float AmbientLightIntensity = 0.3; // Exposure parameter for sky/indirect light
+
+	void Set(float DSS, float ASC, float ASI, float DLI, float ALI) {
+		DirectShadowStrength = DSS;
+		AmbientShadowContrast = ASC;
+		AmbientShadowIntensity = ASI;
+		DirectLightIntensity = DLI;
+		AmbientLightIntensity = ALI;
+	}
+};
+
 class SHLM : public LightingService {
 	// For shadow rendering using Spherical Harmonics (see SHEXP.h)
 
@@ -76,23 +93,6 @@ class SHLM : public LightingService {
 	const AVector3 worldMin, worldMax;
 
 public:
-
-	struct LightParameters {
-		// Light parameters
-		float DirectShadowStrength = 0.85;
-		float AmbientShadowContrast = 1.0;
-		float AmbientShadowIntensity = 0.7;
-		float DirectLightIntensity = 1.0; // Exposure parameter for sun light
-		float AmbientLightIntensity = 0.3; // Exposure parameter for sky/indirect light
-
-		void Set(float DSS, float ASC, float ASI, float DLI, float ALI) {
-			DirectShadowStrength = DSS;
-			AmbientShadowContrast = ASC;
-			AmbientShadowIntensity = ASI;
-			DirectLightIntensity = DLI;
-			AmbientLightIntensity = ALI;
-		}
-	};
 
 	inline static LightParameters LightParams;
 
