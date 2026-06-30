@@ -50,8 +50,9 @@ void GUI_SERVICE::BindToEngine(Engine3D* engine) {
 
         // Display system status or instructions
         ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Controls Menu:");
-        ImGui::BulletText("Press [C] to segment next batch image.");
-        ImGui::BulletText("Press [G] to export current town to GeoJSON.");
+        ImGui::BulletText("Press [C] to segment next batch image");
+        ImGui::BulletText("Press [G] to export current town to GeoJSON");
+        ImGui::BulletText("Press [V] to debug all textures");
 
         ImGui::End();
         // ImGui Render

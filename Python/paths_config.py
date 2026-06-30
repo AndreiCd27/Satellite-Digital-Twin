@@ -17,7 +17,7 @@ DATASET = {
 
 WEIGHTS = {
     "WEIGHTS_DIR": "Python/weights",
-    "SELECTED_WEIGHTS": "Python/weights/building_unet_model_blurry_imgs.pth"
+    "SELECTED_WEIGHTS": "Python/weights/building_unet_model.pth"
 }
 
 # SUPPORTED INTEL GPU HARDWARE ////////////////////////////////////////////////////////

@@ -3,6 +3,8 @@
 #include "Scene.h"
 #include "Mutex.h"
 #include "Texture.h"
+#include "Engine3D.h"
+#include "Export.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -40,10 +42,14 @@ struct TextureCommand {
     bool is_float;
 };
 
+struct GeoDataCommand {
+    GeoData geodata;
+};
 
 extern MutexQueue<RenderCommand> PyRenderLoad;
 extern MutexQueue<TextureCommand> PyPixelLoad;
 extern MutexQueue<DataCommand> PyDataLoad;
+extern MutexQueue<GeoDataCommand> PyGeoDataLoad;
 
 class CommandBuffer {
 public:
@@ -54,6 +60,7 @@ public:
     static void ProcessPyRenderCommands(Scene* scene);
     static void ProcessPyPixelCommands();
     static void ProcessPyDataCommands();
+    static GeoData ProcessPyGeoDataCommands();
     static std::shared_ptr<Texture> InitTexSlot(const std::string& TexKey);
     static std::shared_ptr<Texture> GetTexSlot(const std::string& TexKey);
 };

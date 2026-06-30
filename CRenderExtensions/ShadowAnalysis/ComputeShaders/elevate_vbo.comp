@@ -62,7 +62,9 @@ void main() {
         }
 
         vertices[idx].Position.y = terrainHeight + maxBuildingHeight;
+        vertices[idx].Normal = vec3(0.0, maxBuildingHeight, 0.0);
     } else {
         vertices[idx].Position.y = terrainHeight;
+        vertices[idx].Normal = vec3(0.0, 1.0, 0.0);
     }
 }

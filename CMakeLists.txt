@@ -20,6 +20,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(pybind11)
 
+#           GEOJSON
+
+# Download nlohmann/json
+include(FetchContent)
+FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json
+    GIT_TAG        v3.11.3
+)
+FetchContent_MakeAvailable(json)
+
 #           CMAKE CONFIG
 
 set(CMAKE_CXX_STANDARD 20)
@@ -117,6 +128,7 @@ set(HEADER_FILES
     Headers/Bindings.h
 
     Headers/GUI.h
+    Headers/Export.h
 )
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -140,6 +152,7 @@ add_executable(${PROJECT_NAME} src/Main.cpp
     
     src/Bindings.cpp
     src/GUI.cpp
+    src/Export.cpp
 )
 
 
@@ -199,6 +212,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${CMAKE_DL_LIBS}
     Python3::Python
     pybind11::headers
+    nlohmann_json::nlohmann_json
     #pybind11::embed
 )
 

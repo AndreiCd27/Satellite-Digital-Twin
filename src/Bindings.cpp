@@ -1,6 +1,5 @@
 
 #include "Bindings.h"
-#include "Engine3D.h"
 
 std::atomic<bool> python_should_run{ true };
 std::atomic<bool> __ENV_RESHADE_REQUEST{ true };
@@ -10,6 +9,7 @@ std::atomic<bool> __SENT_PX_COMMAND{ false };
 MutexQueue<RenderCommand> PyRenderLoad;
 MutexQueue<TextureCommand> PyPixelLoad;
 MutexQueue<DataCommand> PyDataLoad;
+MutexQueue<GeoDataCommand> PyGeoDataLoad;
 
 std::unordered_map<std::string, std::shared_ptr<Texture>> CommandBuffer::TextureSlots;
 
@@ -90,6 +90,16 @@ void CommandBuffer::ProcessPyDataCommands() {
             }
         }
     };
+}
+GeoData CommandBuffer::ProcessPyGeoDataCommands() {
+
+    while (auto cmd = PyGeoDataLoad.TryPop()) {
+
+        std::cout << "[RENDER] PROCESSED GEODATA STORE COMMAND FROM PYTHON\n";
+        
+        return cmd->geodata;
+    };
+    return GeoData();
 }
 void CommandBuffer::ProcessPyPixelCommands() {
 
@@ -173,9 +183,27 @@ PYBIND11_EMBEDDED_MODULE(py_engine3d, m) {
         pybind11::arg("x"), pybind11::arg("y"), pybind11::arg("z"), 
         pybind11::arg("r"), pybind11::arg("g"), pybind11::arg("b"), pybind11::arg("a"), pybind11::arg("id"));
 
+    // GeoTIFF class structure
+    pybind11::class_<GeoData>(m, "GeoData")
+    .def(pybind11::init<float, float, float, float, float, int, int, std::string, std::string, std::string, float>(),
+        pybind11::arg("lat0"), pybind11::arg("lon0"), pybind11::arg("lat1"), pybind11::arg("lon1"),
+        pybind11::arg("res"), pybind11::arg("width"), pybind11::arg("height"),
+        pybind11::arg("filename"), pybind11::arg("filepath"), pybind11::arg("CRS"),
+        pybind11::arg("avg_elevation"));
+
     // allow to convert from pyton tuple or list into AVertex
     pybind11::implicitly_convertible<pybind11::tuple, AVertex>();
     pybind11::implicitly_convertible<pybind11::list, AVertex>();
+
+    // allow to convert from pyton tuple or list into GeoData
+    pybind11::implicitly_convertible<pybind11::tuple, GeoData>();
+    pybind11::implicitly_convertible<pybind11::list, GeoData>();
+
+    // Export GeoData to C++ Main Thread
+    m.def("push_geodata", [](GeoData geodata) {
+        auto cmd = std::make_unique<GeoDataCommand>(std::move(geodata));
+        PyGeoDataLoad.Push(std::move(cmd));
+        }, pybind11::arg("GeoData"));
 
     // Only push to mutex thread function is exposed to Python
     m.def("push_geometry", [](std::vector<AVertex> verts, std::vector<GLuint> inds) {
@@ -183,6 +211,7 @@ PYBIND11_EMBEDDED_MODULE(py_engine3d, m) {
         PyRenderLoad.Push(std::move(cmd));
         }, pybind11::arg("vertices"), pybind11::arg("indices")
     );
+    
     m.def("set_geometry", [](std::vector<AVertex> verts, std::vector<GLuint> inds) {
         auto cmd = std::make_unique<RenderCommand>(std::move(verts), std::move(inds), true);
         PyRenderLoad.Push(std::move(cmd));

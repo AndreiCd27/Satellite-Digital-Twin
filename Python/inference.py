@@ -21,6 +21,8 @@ from py_engine3d import reshade
 from py_engine3d import push_texture_pixels
 from py_engine3d import push_tmy_data
 from py_engine3d import sent_px_cmd
+from py_engine3d import GeoData
+from py_engine3d import push_geodata
 
 import tmy_data
 
@@ -116,7 +118,7 @@ def process_and_triangulate_image(image_path):
 
     # Get pixel resolution for pixel=meter conversion
     
-    metadata, bounds, px_res, img_dim = get_geotiff_metadata(filepath=image_path, silent=True)
+    geodata, bounds, px_res, img_dim = get_geotiff_metadata(filepath=image_path, silent=True)
 
     elevation_matrix, avg_height, heightmap_size, heightmap_bounds, lat_lon_bounds = get_elevation_matrix(filepath=image_path)
     elevation_data = {
@@ -129,6 +131,9 @@ def process_and_triangulate_image(image_path):
         global_vertices=global_vertices, global_indices=global_indices,
         elevation_data=elevation_data, silent=True
     )
+
+    geodata.append(float(avg_height))
+    push_geodata(GeoData(*geodata))
 
     clat, clon = (lat_lon_bounds[0] + lat_lon_bounds[1]) / 2, (lat_lon_bounds[2] + lat_lon_bounds[3]) / 2
 

@@ -6,6 +6,7 @@
 #include "Image.h"
 #include "ShadowAnalyzer.h"
 #include "PythonWorker.h"
+#include "Export.h"
 
 #include "GUI.h"
 
@@ -234,6 +235,9 @@ int main() {
     guis.BindToEngine(engine);
     //
 
+    GeoData GEO_DATA;
+    GeoExporter GeoExporterService{ &GEO_DATA };
+
     while (!engine->windowShouldClose()) {
 
         if (Camera::StopMotion == false && __PROCESS_PX_HALT_REQUEST == false) {
@@ -241,6 +245,8 @@ int main() {
             CommandBuffer::ProcessPyRenderCommands(engine->getScene());
             CommandBuffer::ProcessPyPixelCommands();
             CommandBuffer::ProcessPyDataCommands();
+            GeoData geodata_temp = CommandBuffer::ProcessPyGeoDataCommands();
+            if (geodata_temp.GeoFile.filename != "N/A") GEO_DATA = geodata_temp;
 
             if (__SENT_PX_COMMAND == true) {
                 std::cout << "\n[MAIN THEREAD PIPELINE] WAITING FOR PIXEL DATA ON MAIN THREAD...\n";
@@ -282,6 +288,16 @@ int main() {
             std::cout << "[MAIN_THREAD] Continue...\n";
             __PROCESS_PX_HALT_REQUEST.store(false);
             init_global_sys = false;
+        }
+        if (__PROCESS_PX_HALT_REQUEST == true &&  
+            glfwGetKey(engine->GetWindow()->getWindow(), GLFW_KEY_G) == GLFW_PRESS) {
+            // Export to GeoJSON
+            GeoExporterService.ExportVBOtoGeoJSON(engine, GEO_DATA.GeoFile.filename + ".geojson");
+        }
+        if (__PROCESS_PX_HALT_REQUEST == true &&  
+            glfwGetKey(engine->GetWindow()->getWindow(), GLFW_KEY_V) == GLFW_PRESS) {
+            // Debug All Textures
+            DebugAllTex(engine);
         }
         
     }

@@ -1,5 +1,6 @@
 import rasterio
 from rasterio.warp import transform_bounds
+import os
 
 def get_geotiff_metadata(filepath, silent=False):
     with rasterio.open(filepath) as src:
@@ -25,7 +26,11 @@ def get_geotiff_metadata(filepath, silent=False):
             print(f"Latitude: {lat_min:.6f} - {lat_max:.6f}")
             print(f"Longitude: {lon_min:.6f} - {lon_max:.6f}")
         
-        metadata = src.tags()
         bounds = [lat_min, lat_max, lon_min, lon_max]
 
-        return metadata, bounds, (res_x, res_y), (src.width, src.height)
+        crs_string = src.crs.to_proj4()
+        filename = os.path.splitext(os.path.basename(filepath))[0]
+
+        geodata = [lat_min, lon_min, lat_max, lon_max, res_x, src.width, src.height, filename, filepath, crs_string];
+
+        return geodata, bounds, (res_x, res_y), (src.width, src.height)

@@ -13,6 +13,8 @@ uniform int DistanceThreshold;
 void main() {
     ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
     ivec2 size = imageSize(inShadowMask);
+
+    int maxDiscontCount = 8;
     
     if (texelCoord.x >= size.x || texelCoord.y >= size.y) return;
 
@@ -44,7 +46,7 @@ void main() {
         
         // Hit building, most pixels on the path were shadowed
         if (valBuilding > 0.9) {
-            if (discontinuityCounter < 4) {
+            if (discontinuityCounter < maxDiscontCount) {
                 validSRay = true;
             }
             break;
