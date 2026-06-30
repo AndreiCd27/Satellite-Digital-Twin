@@ -465,7 +465,7 @@ void SHLM::SH_renderPass(float FOVdeg, float zNear, float zFar) {
 	// Evaluated direction in SH with the ZH convolution normalization constants
 	// This function implements DHI scaling on a clear sky model
 	SphericalHarmonics->GetLightBasisYUp(L.x, L.y, L.z, LightSH);
-	SphericalHarmonics->ApplyFunkHeckeCosine(LightSH, false);
+	//SphericalHarmonics->ApplyFunkHeckeCosine(LightSH, false);
 	SH_Program.SetUniformVec4Array("LightSH", LightSH, 16);
 
 	//float ZHtoSH[4]; SphericalHarmonics->GetCombinedZHtoSH(ZHtoSH);
@@ -689,67 +689,4 @@ void SHLM::ProcessEntireYear(int total_maxt) {
 	glBindImageTexture(6, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
 	std::cout << "[SOLAR::TMY] Success! Computed all TMY data!\n";
-}
-
-
-#define CHECK_GL_ERROR_LINE(stepName) \
-    { \
-        GLenum err; \
-        while ((err = glGetError()) != GL_NO_ERROR) { \
-            std::cout << "[RESET ERROR] " << stepName << " line" << __LINE__ \
-                      << " - GL_ERROR: 0x" << std::hex << err << std::dec << "\n"; \
-        } \
-    }
-
-void SHLM::ResetPipelineForNextImage() {
-	GLenum dummy; while ((dummy = glGetError()) != GL_NO_ERROR);
-
-	glFinish();
-	CHECK_GL_ERROR_LINE("glFinish Initial");
-
-	for (int i = 0; i <= 5; i++) {
-		glActiveTexture(GL_TEXTURE0 + i);
-		glBindTexture(GL_TEXTURE_2D, 0);
-	}
-	CHECK_GL_ERROR_LINE("Unbind Sampler Textures");
-
-	glBindImageTexture(6, 0, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
-	glBindImageTexture(7, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
-	CHECK_GL_ERROR_LINE("Unbind Image Textures (6, 7)");
-
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-	glUseProgram(0);
-	CHECK_GL_ERROR_LINE("Unbind SSBO & Shader Program");
-
-	int w = sum_irradiance_in->GetWidth();
-	int h = sum_irradiance_in->GetHeight();
-
-	std::vector<float> zeroLine(w, 0.0f);
-
-	glActiveTexture(GL_TEXTURE0);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-	CHECK_GL_ERROR_LINE("Setup Pixel Store Alignment");
-
-	glBindTexture(GL_TEXTURE_2D, sum_irradiance_in->GetTexID());
-	CHECK_GL_ERROR_LINE("Bind Texture Irradiance IN");
-
-	for (int row = 0; row < h; row++) {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, row, w, 1, GL_RED, GL_FLOAT, zeroLine.data());
-	}
-	CHECK_GL_ERROR_LINE("glTexSubImage2D Irradiance IN Loop");
-
-	glBindTexture(GL_TEXTURE_2D, sum_irradiance_out->GetTexID());
-	CHECK_GL_ERROR_LINE("Bind Texture Irradiance OUT");
-
-	for (int row = 0; row < h; row++) {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, row, w, 1, GL_RED, GL_FLOAT, zeroLine.data());
-	}
-	CHECK_GL_ERROR_LINE("glTexSubImage2D Irradiance OUT Loop");
-
-	glBindTexture(GL_TEXTURE_2D, 0);
-	CHECK_GL_ERROR_LINE("Final Unbind Texture");
-
-	glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
-	glFinish();
-	CHECK_GL_ERROR_LINE("Final glFinish");
 }

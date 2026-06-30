@@ -276,8 +276,8 @@ int main() {
             glfwGetKey(engine->GetWindow()->getWindow(), GLFW_KEY_C) == GLFW_PRESS) {
 
             //SatelliteImageAnalyze.ResetTextures();
-            shlm.ResetPipelineForNextImage();
-            glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+            //shlm.ResetPipelineForNextImage();
+            //glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
 
             std::cout << "[MAIN_THREAD] Continue...\n";
             __PROCESS_PX_HALT_REQUEST.store(false);

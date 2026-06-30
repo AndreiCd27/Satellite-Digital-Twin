@@ -27,7 +27,7 @@ vec4 ComputeWedgeLinearZH(float sigma) {
     float sinS = sin(sigma);
 
     vec4 zh;
-    // Standard analytic projection formulas for a cone pointing straight up (Z-axis / Height-axis)
+
     zh.x = Y00 * (1.0 - cosS);
     zh.y = Y10 * 0.5 * (sinS * sinS);
     zh.z = Y20 * 0.5 * cosS * (sinS * sinS);
@@ -42,31 +42,34 @@ void RotateZHtoLinearSH(vec4 zh, float phi, inout vec4 finalSH[4]) {
     float c2 = cos(2.0*phi); float s2 = sin(2.0*phi);
     float c3 = cos(3.0*phi); float s3 = sin(3.0*phi);
 
-    // Band 0
+    // Band 0 (L = 0)
     finalSH[0].x += zh.x;
     
-    // Band 1
-    finalSH[0].y += zh.y * c1;
-    finalSH[0].z += zh.y;
-    finalSH[0].w += zh.y * s1;
+    // Band 1 (L = 1)
+    finalSH[0].y += zh.y * c1;  // m = -1 (X-axis component)
+    finalSH[0].z += zh.y;       // m =  0 (Y-axis component / Zonal)
+    finalSH[0].w += zh.y * s1;  // m =  1 (Z-axis component)
     
-    // Band 2
+    // Band 2 (L = 2)
     finalSH[1].x += zh.z * c2;
-    finalSH[1].y += zh.z * s2;
-    finalSH[1].z += zh.z * c1;
+    finalSH[1].y += zh.z * c1;
+    finalSH[1].z += zh.z;
     finalSH[1].w += zh.z * s1;
+    finalSH[2].x += zh.z * s2;
     
-    // Band 3
-    finalSH[2].x += zh.w * c3;
-    finalSH[2].y += zh.w * s3;
+    // Band 3 (L = 3)
+
+    finalSH[2].y += zh.w * c3;
     finalSH[2].z += zh.w * c2;
-    finalSH[2].w += zh.w * s2;
+    finalSH[2].w += zh.w * c1;
     
-    finalSH[3].x += zh.w * c1;
+    finalSH[3].x += zh.w;
+
     finalSH[3].y += zh.w * s1;
-    finalSH[3].z += zh.w;
-    finalSH[3].w += 0.0;
+    finalSH[3].z += zh.w * s2;
+    finalSH[3].w += zh.w * s3;
 }
+
 
 float GetUnifiedWorldHeight(vec2 uv) {
     vec2 clr = texture(uHeightmap, uv).rg;
