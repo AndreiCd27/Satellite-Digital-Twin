@@ -86,18 +86,6 @@ public:
         SetDllDirectoryA("C:\\Program Files\\Python313");
         Py_SetPythonHome(L"C:\\Program Files\\Python313");
 #endif
-        /*
-#ifdef _WIN32
-    std::cout << "[DEBUG] Specific Windows configurations for DLL not found errors\n";
-
-    std::filesystem::path p(scriptPath);
-    std::string script_dir = p.parent_path().string();
-
-    SetDllDirectoryA(script_dir.c_str()); 
-    
-    Py_SetPythonHome(L"C:\\Program Files\\Python313");
-#endif
-        */
 
         try {
             // Initialize the embedding interpreter on the main C++ render thread
