@@ -25,12 +25,20 @@ struct RenderCommand {
     std::vector<AVertex> vertices;
     std::vector<GLuint> indices;
     bool set_geom = false;
+public:
+    RenderCommand(const std::vector<AVertex>& verts, const std::vector<GLuint>& inds, bool geom) :
+        vertices(verts), indices(inds), set_geom(geom) {}
+    RenderCommand() = default;
 };
 
 struct DataCommand {
     std::vector<float> tmy;
     std::vector<float> sun_dirs;
     std::string dataType;
+public:
+    DataCommand(const std::vector<float>& _tmy, const std::vector<float>& _sun_dirs, const std::string& _dataType) :
+        tmy(_tmy), sun_dirs(sun_dirs), dataType(_dataType) {}
+    DataCommand() = default;
 };
 
 struct TextureCommand {
@@ -44,6 +52,9 @@ struct TextureCommand {
 
 struct GeoDataCommand {
     GeoData geodata;
+public:
+    GeoDataCommand(const GeoData& _geodata) : geodata(_geodata) {}
+    GeoDataCommand() = default;
 };
 
 extern MutexQueue<RenderCommand> PyRenderLoad;

@@ -17,9 +17,9 @@ struct GeoTIFF {
 	float MetersPerPixel;
 	int width, height;
 public:
-	GeoTIFF(float MetersPerPixels, int width, int height,
+	GeoTIFF(float metersPerPx, int width, int height,
 		const std::string& filename, const std::string& filepath, const std::string& CRS) :
-		filename(filename), filepath(filepath), CRS(CRS), MetersPerPixel(MetersPerPixel), width(width), height(height)
+		filename(filename), filepath(filepath), CRS(CRS), MetersPerPixel(metersPerPx), width(width), height(height)
 	{ }
 	GeoTIFF() = default;
 };

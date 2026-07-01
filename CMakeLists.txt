@@ -10,7 +10,7 @@ project(CRender VERSION 1.0.0)
 set(PYBIND11_FINDPYTHON ON CACHE BOOL "Use CMake FindPython" FORCE)
 set(Pybind11_PYTHON_FREE_THREADED OFF CACHE BOOL "Disable free-threaded Python" FORCE)
 
-find_package(Python3 3.12 COMPONENTS Interpreter Development.Module Development.Embed REQUIRED)
+find_package(Python3 3.13 COMPONENTS Interpreter Development.Module Development.Embed REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -74,9 +74,18 @@ endif()
 
 #           EXTERNAL LIBRARIES
 
+add_compile_definitions(TINYTIFF_LARGE_FILE_SUPPORT)
+
 #Additional Cmakelists
 add_subdirectory(Libraries/include/glm)
+
 add_subdirectory(Libraries/include/TinyTIFF)
+if(TARGET TinyTIFF)
+    set_target_properties(TinyTIFF PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/Libraries/include/TinyTIFF")
+endif()
+if(TARGET TinyTIFFXX)
+    set_target_properties(TinyTIFFXX PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/Libraries/include/TinyTIFF")
+endif()
 
 #add_subdirectory(Libraries/glfw)
 
@@ -160,16 +169,34 @@ add_executable(${PROJECT_NAME} src/Main.cpp
 
 #           CONFIGURE PYBIND11
 
-pybind11_add_module(py_engine3d src/Bindings.cpp)
+pybind11_add_module(py_engine3d)
 
 set_target_properties(py_engine3d PROPERTIES 
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+target_include_directories(py_engine3d PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/Headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/Libraries/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions
+)
+
+target_link_libraries(py_engine3d PRIVATE nlohmann_json::nlohmann_json)
+
+target_sources(py_engine3d PRIVATE
+    src/Bindings.cpp
+    src/Export.cpp
+)
+
 # Link Python Module
-target_include_directories(py_engine3d PRIVATE src/ Headers/ Libraries/include CRenderExtensions)
-target_link_libraries(py_engine3d PRIVATE glad ${GLFW_LIB} OpenGL::GL Python3::Module)
+target_link_libraries(py_engine3d PRIVATE
+    glad
+    ${GLFW_LIB}
+    OpenGL::GL
+    Python3::Module
+)
 target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -179,9 +206,9 @@ target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
 target_include_directories(${PROJECT_NAME} PRIVATE CRenderExtensions)
 target_include_directories(${PROJECT_NAME} PRIVATE Headers)
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include)
-target_include_directories(${PROJECT_NAME} PRIVATE Libraries/include/TinyTIFF)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF)
-target_include_directories(${PROJECT_NAME} PRIVATE Libraries/include/imgui)
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/TinyTIFF)
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF)
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/imgui)
 
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
@@ -198,8 +225,8 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${Python3_INCLUDE_DIRS
 
 #           TARGET LINK DIRECTORIES
 
-#target_link_directories(${PROJECT_NAME} PRIVATE "${Python3_ROOT_DIR}/libs")
-#target_link_directories(py_engine3d PRIVATE "${Python3_ROOT_DIR}/libs")
+#target_link_directories(${PROJECT_NAME} PRIVATE "${Python3_LIBRARY_DIRS}")
+#target_link_directories(py_engine3d PRIVATE "${Python3_LIBRARY_DIRS}")
 
 #target_link_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Libraries/lib)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${GLFW_LIB} ${EXTRA_LIBS})

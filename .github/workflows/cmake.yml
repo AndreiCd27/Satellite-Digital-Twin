@@ -11,7 +11,7 @@ on:
       build_type:
         description: Build type
         required: false
-        default: 'Debug'
+        default: 'RelWithDebInfo'
         type: choice
         options: [Debug, Release, RelWithDebInfo, MinSizeRel]
 
@@ -30,7 +30,7 @@ jobs:
     env:
       CC: ${{ matrix.c }}
       CXX: ${{ matrix.cxx }}
-      BUILD_TYPE: ${{ github.event.inputs.build_type || 'Debug' }}
+      BUILD_TYPE: ${{ github.event.inputs.build_type || 'RelWithDebInfo' }}
       EXECUTABLE_NAME: "CRender"
       INPUT_FILENAME: "tastatura.txt"
       BUILD_DIR: "build"
@@ -75,6 +75,11 @@ jobs:
         run: |
           mkdir -p artifacts
           if [ ! -f "${INPUT_FILENAME}" ]; then touch "${INPUT_FILENAME}"; fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
