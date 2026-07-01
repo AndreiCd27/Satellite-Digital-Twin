@@ -6,6 +6,7 @@
 #include "ComputeShader.h"
 #include "SH.h"
 #include "SH_VoxelGrid.h"
+#include "CommandBuffer.h"
 
 #include <chrono>
 

@@ -9,11 +9,6 @@ import numpy as np
 #from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
 
-from geotiff_metadata import get_geotiff_metadata
-from load_topo_data import get_elevation_matrix
-from load_topo_data import topo_geom
-from polygonize_mask import triangulate_mask
-
 from py_engine3d import set_geometry
 from py_engine3d import should_run
 from py_engine3d import should_halt
@@ -23,6 +18,11 @@ from py_engine3d import push_tmy_data
 from py_engine3d import sent_px_cmd
 from py_engine3d import GeoData
 from py_engine3d import push_geodata
+
+from geotiff_metadata import get_geotiff_metadata
+from load_topo_data import get_elevation_matrix
+from load_topo_data import topo_geom
+from polygonize_mask import triangulate_mask
 
 import tmy_data
 

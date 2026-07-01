@@ -540,10 +540,6 @@ void SatelliteAnalyzer::Debug_uHeights() {
 void SatelliteAnalyzer::AnalyzeFromQueue() {
     if (AnalysisDone) return;
 
-    // Geometry will reset, textures will regenerate, wait untill solar output computation is finished
-    // Now we stop processing pixels input from python
-    __PROCESS_PX_HALT_REQUEST.store(true);
-
     glFinish();
     ForcePipelineFlush();
     ResetGLContexts();

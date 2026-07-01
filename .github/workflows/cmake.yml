@@ -34,6 +34,7 @@ jobs:
       EXECUTABLE_NAME: "CRender"
       INPUT_FILENAME: "tastatura.txt"
       BUILD_DIR: "build"
+      WARNINGS_AS_ERRORS: "OFF"
 
     strategy:
       fail-fast: false

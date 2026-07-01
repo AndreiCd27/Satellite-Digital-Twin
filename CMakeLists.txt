@@ -112,9 +112,8 @@ file(GLOB_RECURSE EXTENSION_HEADERS CONFIGURE_DEPENDS "CRenderExtensions/*.h")
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#           HEADER FILES
-
-set(HEADER_FILES
+#           CRENDER ENGINE
+set(CORE_HEADER_FILES
     Headers/Engine3D.h
     Headers/Camera.h
     Headers/Scene.h
@@ -133,37 +132,53 @@ set(HEADER_FILES
     Headers/Action.h
     Headers/EngineConfig.h
 
-    Headers/Mutex.h
-    Headers/Bindings.h
-
     Headers/GUI.h
+    Headers/Mutex.h
     Headers/Export.h
+    Headers/CommandBuffer.h
 )
 
-# ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#           SOURCE FILES
-
-add_executable(${PROJECT_NAME} src/Main.cpp
-    src/Engine3D.cpp src/Camera.cpp
+add_library(CoreCRender STATIC
+    src/Engine3D.cpp 
+    src/Camera.cpp
     src/Scene.cpp
     src/GeometryBasics.cpp
     src/Texture.cpp
-    src/VBO.cpp src/EBO.cpp src/VAO.cpp
+    src/VBO.cpp 
+    src/EBO.cpp 
+    src/VAO.cpp
     src/shaderClass.cpp
     
     src/Window.cpp
     src/ComputeShader.cpp
-
-    ${HEADER_FILES}
-    ${EXTENSION_HEADERS}
-    ${EXTENSION_SOURCES}
-    
-    src/Bindings.cpp
     src/GUI.cpp
     src/Export.cpp
+    src/CommandBuffer.cpp
+
+    ${CORE_HEADER_FILES}
+    ${EXTENSION_HEADERS}
+    ${EXTENSION_SOURCES}
 )
 
+# ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#           TARGET INCLUDE DIRECTORIES
+
+target_include_directories(CoreCRender PRIVATE CRenderExtensions Headers)
+target_include_directories(CoreCRender SYSTEM PRIVATE Libraries/include 
+    Libraries/include/TinyTIFF
+    ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF
+    Libraries/include/imgui
+)
+target_link_libraries(CoreCRender PUBLIC nlohmann_json::nlohmann_json)
+
+target_include_directories(CoreCRender PRIVATE 
+    "CRenderExtensions/Lighting/Headers"
+    "CRenderExtensions/ImageService/Headers"
+    "CRenderExtensions/ShadowAnalysis/Headers"
+    "CRenderExtensions/PythonWorker/Headers"
+    "Headers"
+)
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -186,12 +201,13 @@ target_include_directories(py_engine3d PRIVATE
 target_link_libraries(py_engine3d PRIVATE nlohmann_json::nlohmann_json)
 
 target_sources(py_engine3d PRIVATE
+    Headers/Bindings.h
     src/Bindings.cpp
-    src/Export.cpp
 )
 
 # Link Python Module
 target_link_libraries(py_engine3d PRIVATE
+    CoreCRender
     glad
     ${GLFW_LIB}
     OpenGL::GL
@@ -201,49 +217,32 @@ target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
 
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#           TARGET INCLUDE DIRECTORIES
+#           EXECUTABLE
+add_executable(${PROJECT_NAME} src/Main.cpp)
 
-target_include_directories(${PROJECT_NAME} PRIVATE CRenderExtensions)
-target_include_directories(${PROJECT_NAME} PRIVATE Headers)
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include)
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/TinyTIFF)
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF)
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/imgui)
-
-
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Headers)
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${Python3_INCLUDE_DIRS})
 target_include_directories(${PROJECT_NAME} PRIVATE 
-    "CRenderExtensions/Lighting/Headers"
-    "CRenderExtensions/ImageService/Headers"
-    "CRenderExtensions/ShadowAnalysis/Headers"
-    "CRenderExtensions/PythonWorker/Headers"
-    "Headers"
+    ${CMAKE_CURRENT_SOURCE_DIR}/Headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions
+    "${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions/Lighting/Headers"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions/ImageService/Headers"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions/ShadowAnalysis/Headers"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CRenderExtensions/PythonWorker/Headers"
 )
 
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${Python3_INCLUDE_DIRS})
-
-# ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#           TARGET LINK DIRECTORIES
-
-#target_link_directories(${PROJECT_NAME} PRIVATE "${Python3_LIBRARY_DIRS}")
-#target_link_directories(py_engine3d PRIVATE "${Python3_LIBRARY_DIRS}")
-
-#target_link_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Libraries/lib)
-target_link_libraries(${PROJECT_NAME} PRIVATE ${GLFW_LIB} ${EXTRA_LIBS})
-target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
 target_link_libraries(${PROJECT_NAME} PRIVATE 
+    CoreCRender
     glad
     OpenGL::GL
     TinyTIFF
     imgui
+    ${GLFW_LIB}
+    ${EXTRA_LIBS}
     ${CMAKE_DL_LIBS}
     Python3::Python
     pybind11::headers
-    nlohmann_json::nlohmann_json
-    #pybind11::embed
 )
-
-#target_link_libraries(py_engine3d PRIVATE ${Python3_LIBRARIES})
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE Py_GIL_USED=1)
 target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)

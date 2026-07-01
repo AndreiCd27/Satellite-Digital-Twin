@@ -33,12 +33,14 @@ private:
             namespace fs = std::filesystem;
             fs::path absolute_path = fs::absolute(py_script_path);
             std::string script_dir = absolute_path.parent_path().generic_string();
+            std::string build_dir = absolute_path.parent_path().parent_path().generic_string();
 
             std::cout << "[ThreadLoop] Attempting to evaluate file: " << absolute_path.generic_string() << "\n";
 
             // Get access from Python for this configuration script
             pybind11::module_ sys = pybind11::module_::import("sys");
             sys.attr("path").attr("insert")(0, pybind11::str(script_dir));
+            sys.attr("path").attr("insert")(0, pybind11::str(build_dir));
             // Import the path_manage python script
             pybind11::module_ path_manage = pybind11::module_::import("path_manage");
             // Compute configured paths via this script
@@ -84,6 +86,18 @@ public:
         SetDllDirectoryA("C:\\Program Files\\Python313");
         Py_SetPythonHome(L"C:\\Program Files\\Python313");
 #endif
+        /*
+#ifdef _WIN32
+    std::cout << "[DEBUG] Specific Windows configurations for DLL not found errors\n";
+
+    std::filesystem::path p(scriptPath);
+    std::string script_dir = p.parent_path().string();
+
+    SetDllDirectoryA(script_dir.c_str()); 
+    
+    Py_SetPythonHome(L"C:\\Program Files\\Python313");
+#endif
+        */
 
         try {
             // Initialize the embedding interpreter on the main C++ render thread

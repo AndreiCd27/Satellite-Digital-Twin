@@ -6,8 +6,8 @@
 #include "Image.h"
 #include "ShadowAnalyzer.h"
 #include "PythonWorker.h"
+#include "Bindings.h"
 #include "Export.h"
-
 #include "GUI.h"
 
 #define scene engine->getScene()
@@ -148,6 +148,10 @@ static bool ReshadeAndUpdateScene(Engine3D* engine, SatelliteAnalyzer& Satellite
     glFinish();
     SatelliteAnalyzer::ResetGLContexts();
     SatelliteImageAnalyze.ResetAnalysisState();
+
+    // Geometry will reset, textures will regenerate, wait untill solar output computation is finished
+    // Now we stop processing pixels input from python
+    __PROCESS_PX_HALT_REQUEST.store(true);
     SatelliteImageAnalyze.AnalyzeFromQueue();
 
     auto u_heights_tex = CommandBuffer::GetTexSlot("u_heights");

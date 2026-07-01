@@ -1,6 +1,5 @@
 
 #include "LightingModel.h"
-#include "Bindings.h"
 
 const std::string path = "CRenderExtensions/Lighting";
 
@@ -325,11 +324,6 @@ void SHLM::Load_Cubemap_GPU_ComputeShader_Extended() {
 
 void SHLM::SH_Heightmap_Shading_Compute() {
 
-	//__PY_HALT_REQUEST.store(true);
-	while (!PyPixelLoad.Empty()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	}
-
 	static bool init_called = false;
 	//auto b_compute_t0 = std::chrono::high_resolution_clock::now();
 	if (!init_called) {
@@ -635,6 +629,7 @@ void SHLM::SumIrradianceOverTime() {
 
 }
 
+
 struct TMYHourData {
 	float sun_x;
 	float sun_y;
@@ -673,7 +668,7 @@ void SHLM::ProcessEntireYear(int total_maxt) {
 	glActiveTexture(GL_TEXTURE4);
 	glBindTexture(GL_TEXTURE_2D, UnifiedHeightmap->GetTexID());
 	glActiveTexture(GL_TEXTURE5);
-	glBindTexture(GL_TEXTURE_2D, CommandBuffer::GetTexSlot("buildings_mask")->GetTexID());
+	glBindTexture(GL_TEXTURE_2D, BuildingsMaskTexID);
 
 	glBindImageTexture(6, sum_irradiance_out->GetTexID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
