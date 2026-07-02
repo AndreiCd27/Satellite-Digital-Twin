@@ -3,7 +3,6 @@
 
 #include "precompile.h"
 #include "Engine3D.h"
-#include "Image.h"
 #include "Raymarch.h"
 #include "CommandBuffer.h"
 #include <memory>

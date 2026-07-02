@@ -50,3 +50,12 @@
    ...
    fun:_dl_init
 }
+{
+   ignore_linux_mesa_dri_drivers
+   Memcheck:Leak
+   match-leak-kinds: definite,indirect
+   fun:calloc
+   obj:*
+   obj:*
+   obj:*
+}

@@ -3,7 +3,6 @@
 #include <chrono>
 
 #include "LightingModel.h"
-#include "Image.h"
 #include "ShadowAnalyzer.h"
 #include "PythonWorker.h"
 #include "Bindings.h"
@@ -17,47 +16,27 @@ auto startTime = std::chrono::steady_clock::now();
 
 #define scene engine->getScene()
 
-void DebugTextureR32F(Texture* t) {
-    int w = t->GetWidth();
-    int h = t->GetHeight();
-
-    std::cout << "Debug texture =======================================================================\n";
-
-    std::vector<float> cpuPixels(w * h, 0.0f);
-
-    glBindTexture(GL_TEXTURE_2D, t->GetTexID());
-    glPixelStorei(GL_PACK_ALIGNMENT, 4);
-
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, cpuPixels.data());
-
-    GLenum err = glGetError();
-    if (err != GL_NO_ERROR) {
-        std::cout << "[GPU ERROR] glGetTexImage failed with error code: " << err << "\n";
-    }
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    float avgH = 0.0f;
-    float maxH = 0.0f;
-    int bcnt = 0;
-
-    for (int i = 0; i < w * h; i++) {
-        if (cpuPixels[i] > 0.0f) {
-            avgH += cpuPixels[i];
-            bcnt++;
-        }
-        if (cpuPixels[i] > maxH) {
-            maxH = cpuPixels[i];
+static void CI_GITHUB_CHECK() {
+    if (const char* ciEnv = std::getenv("GITHUB_ACTIONS")) {
+        if (std::string(ciEnv) == "true") {
+            isCI = true;
+            std::cout << "[CI] Github Actions Detected\n";
         }
     }
-
-    std::cout << "--------------------------------------------------------------\n";
-    std::cout << "[GPU TEXTURE CHECK] Non-Zero PX Count: " << bcnt << " / " << (w * h) << "\n";
-    std::cout << "[GPU TEXTURE CHECK] Max PX value: " << maxH << "\n";
-    std::cout << "[GPU TEXTURE CHECK] Average PX value: " << avgH / (float(bcnt) + 0.000001f) << "\n";
-    std::cout << "--------------------------------------------------------------\n";
 }
 
+static bool CI_GITHUB_TIMEOUT() {
+    if (isCI) {
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime).count();
+
+        if (elapsed >= 60) {
+            std::cout << "[CI] Game Loop Shutdown" << std::endl;
+            return true;
+        }
+    }
+    return false;
+}
 
 std::string GetDebugTexKey(int tt) {
     std::string key;
@@ -88,7 +67,7 @@ std::string GetDebugTexKey(int tt) {
     return key;
 }
 
-void DebugTex(int tt) {
+static void DebugTex(int tt) {
     std::shared_ptr<Texture> stex = nullptr;
     auto key = GetDebugTexKey(tt);
     stex = CommandBuffer::GetTexSlot(key);
@@ -106,34 +85,6 @@ void DebugAllTex(Engine3D* e) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
     Engine3D::DEBUG_TEXTURE = false;
-}
-
-void DebugIrr(Engine3D* engine) {
-    static int debugStage = 0;
-    static double debugTimer = 0.0;
-
-
-    if (debugStage == 0) {
-        glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
-        DebugTex(12);
-        engine->Render();
-        debugStage = 1;
-        debugTimer = glfwGetTime();
-    }
-
-    double currentTime = glfwGetTime();
-
-    if (debugStage == 1 && (currentTime - debugTimer >= 3.0)) {
-        DebugTex(13);
-        engine->Render();
-        debugStage = 2;
-        debugTimer = currentTime;
-    }
-
-    if (debugStage == 2 && (currentTime - debugTimer >= 3.0)) {
-        debugStage = 0;
-        __PROCESS_PX_HALT_REQUEST.store(false);
-    }
 }
 
 static bool ReshadeAndUpdateScene(Engine3D* engine, SatelliteAnalyzer& SatelliteImageAnalyze, SHLM& shlm, bool geom) {
@@ -204,12 +155,7 @@ void DebugTMY(Engine3D* engine) {
 
 int main() {
 
-    if (const char* ciEnv = std::getenv("GITHUB_ACTIONS")) {
-        if (std::string(ciEnv) == "true") {
-            isCI = true;
-            std::cout << "[CI] Github Actions Detected\n";
-        }
-    }
+    CI_GITHUB_CHECK();
 
     Engine3D* engine = Engine3D::GetEngine3D();
 
@@ -238,7 +184,6 @@ int main() {
     shlm.BindToEngine(45.0f, 0.01f, 5000.0f);
 
     SatelliteAnalyzer SatelliteImageAnalyze;
-    ImageService* ims = ImageService::GetService();
 
     bool init_global_sys = false;
 
@@ -256,15 +201,7 @@ int main() {
 
     while (!engine->windowShouldClose()) {
 
-        if (isCI) {
-            auto currentTime = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime).count();
-
-            if (elapsed >= 60) {
-                std::cout << "[CI] Game Loop Shutdown" << std::endl;
-                break;
-            }
-        }
+        if (CI_GITHUB_TIMEOUT()) break;
 
         if (Camera::StopMotion == false && __PROCESS_PX_HALT_REQUEST == false) {
             

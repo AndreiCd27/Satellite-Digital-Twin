@@ -3,6 +3,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 project(CRender VERSION 1.0.0)
 
+set(CMAKE_NO_SYSTEM_FROM_IMPORTED ON)
+
 # ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #           PYBIND11
@@ -75,18 +77,8 @@ endif()
 
 #           EXTERNAL LIBRARIES
 
-add_compile_definitions(TINYTIFF_LARGE_FILE_SUPPORT)
-
 #Additional Cmakelists
 add_subdirectory(Libraries/include/glm)
-
-add_subdirectory(Libraries/include/TinyTIFF)
-if(TARGET TinyTIFF)
-    set_target_properties(TinyTIFF PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/Libraries/include/TinyTIFF")
-endif()
-if(TARGET TinyTIFFXX)
-    set_target_properties(TinyTIFFXX PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/Libraries/include/TinyTIFF")
-endif()
 
 #add_subdirectory(Libraries/glfw)
 
@@ -213,8 +205,6 @@ target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
 target_include_directories(${PROJECT_NAME} PRIVATE CRenderExtensions)
 target_include_directories(${PROJECT_NAME} PRIVATE Headers)
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include)
-# target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/TinyTIFF)
-# target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF)
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/imgui)
 
 
@@ -241,8 +231,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     glad
     OpenGL::GL
-    TinyTIFF
-    TinyTIFFXX
     imgui
     ${CMAKE_DL_LIBS}
     Python3::Python
