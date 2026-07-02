@@ -10,6 +10,11 @@
 #include "Export.h"
 #include "GUI.h"
 
+#include <cstdlib>
+
+bool isCI = false;
+auto startTime = std::chrono::steady_clock::now();
+
 #define scene engine->getScene()
 
 void DebugTextureR32F(Texture* t) {
@@ -199,6 +204,13 @@ void DebugTMY(Engine3D* engine) {
 
 int main() {
 
+    if (const char* ciEnv = std::getenv("GITHUB_ACTIONS")) {
+        if (std::string(ciEnv) == "true") {
+            isCI = true;
+            std::cout << "[CI] Github Actions Detected\n";
+        }
+    }
+
     Engine3D* engine = Engine3D::GetEngine3D();
 
     int success = engine->setupWindow(1200, 900, "window");
@@ -243,6 +255,16 @@ int main() {
     GeoExporter GeoExporterService{ &GEO_DATA };
 
     while (!engine->windowShouldClose()) {
+
+        if (isCI) {
+            auto currentTime = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime).count();
+
+            if (elapsed >= 60) {
+                std::cout << "[CI] Game Loop Shutdown" << std::endl;
+                break;
+            }
+        }
 
         if (Camera::StopMotion == false && __PROCESS_PX_HALT_REQUEST == false) {
             
