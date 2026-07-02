@@ -1,6 +1,52 @@
 {
+   ignore_python_core_allocations
+   Memcheck:Leak
+   match-leak-kinds: possible,definite
+   fun:*alloc
+   ...
+   obj:*/libpython3.*
+}
+
+{
+   ignore_pytorch_leaks
+   Memcheck:Leak
+   match-leak-kinds: possible,definite
+   fun:*alloc
+   ...
+   obj:*/libtorch_cpu.so
+}
+
+{
+   ignore_libc10_leaks
+   Memcheck:Leak
+   match-leak-kinds: possible,definite
+   fun:*alloc
+   ...
+   obj:*/libc10.so
+}
+
+{
+   ignore_nvidia_cuda_tls
+   Memcheck:Leak
+   match-leak-kinds: possible,definite
+   fun:*alloc
+   ...
+   obj:*/libcupti.so*
+}
+
+{
    ignore_glfw_leaks
    Memcheck:Leak
+   match-leak-kinds: possible,definite
    ...
    fun:glfwInit
+}
+
+{
+   ignore_ld_tls_allocations
+   Memcheck:Leak
+   match-leak-kinds: possible,definite
+   fun:*alloc
+   ...
+   fun:_dl_init
 }

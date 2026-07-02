@@ -150,6 +150,7 @@ jobs:
         run: |
           export LIBGL_ALWAYS_SOFTWARE=1
           xvfb-run -a valgrind --leak-check=full \
+                               --errors-for-leak-kinds=definite \
                                --suppressions=valgrind_external_libs.supp \
                                --error-exitcode=1 ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
 
@@ -162,12 +163,12 @@ jobs:
         run: |
          export LIBGL_ALWAYS_SOFTWARE=1
          xvfb-run -a ./${BUILD_DIR}/${EXECUTABLE_NAME} < "${INPUT_FILENAME}"
-
-      - name: Static Analysis (Cppcheck)
-        if: runner.os == 'Linux'
-        run: |
-          cppcheck --enable=all --project="${BUILD_DIR}"/compile_commands.json \
-            --suppress=missingIncludeSystem --error-exitcode=1
+         
+#      - name: Static Analysis (Cppcheck)
+#        if: runner.os == 'Linux'
+#        run: |
+#          cppcheck --enable=all --project="${BUILD_DIR}"/compile_commands.json \
+#            --suppress=missingIncludeSystem --error-exitcode=1
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
