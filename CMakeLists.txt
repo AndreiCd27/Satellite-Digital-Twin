@@ -136,7 +136,6 @@ set(HEADER_FILES
 
     Headers/Mutex.h
 
-    Headers/GUI.h
     Headers/Export.h
     Headers/CommandBuffer.h
     Headers/Bindings.h
@@ -157,7 +156,6 @@ set(CRENDER_SOURCE_FILES
     src/Window.cpp
     src/ComputeShader.cpp
     
-    src/GUI.cpp
     src/Export.cpp
     src/CommandBuffer.cpp
     src/Bindings.cpp
@@ -166,6 +164,8 @@ set(CRENDER_SOURCE_FILES
 add_executable(${PROJECT_NAME} src/Main.cpp
     
     ${CRENDER_SOURCE_FILES}
+    Headers/GUI.h
+    src/GUI.cpp
 
     ${HEADER_FILES}
     ${EXTENSION_HEADERS}
