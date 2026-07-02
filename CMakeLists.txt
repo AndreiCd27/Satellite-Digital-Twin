@@ -188,8 +188,10 @@ target_include_directories(py_engine3d PRIVATE
 target_link_libraries(py_engine3d PRIVATE nlohmann_json::nlohmann_json)
 
 target_sources(py_engine3d PRIVATE
+    src/CommandBuffer.cpp
     src/Bindings.cpp
     src/Export.cpp
+    src/GeometryBasics.cpp
 )
 
 # Link Python Module

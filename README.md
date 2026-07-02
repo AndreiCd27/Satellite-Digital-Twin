@@ -11,6 +11,6 @@ Goal: Given an satellite image at high pixel-to-meter resolution, classify build
 
 ## Building Roof Segmentation from Satellite Imagery
 <div style="display: flex; gap: 10px;">
-  <img src="https://github.com/AndreiCd27/Satellite-Digital-Twin/blob/main/gallery/satellite.png" width="50%" />
-  <img src="https://github.com/AndreiCd27/Satellite-Digital-Twin/blob/main/gallery/segment-buildings.png" width="50%" />
+  <img src="https://github.com/AndreiCd27/Satellite-Digital-Twin/blob/main/gallery/satellite.png" width="45%" />
+  <img src="https://github.com/AndreiCd27/Satellite-Digital-Twin/blob/main/gallery/segment-buildings.png" width="45%" />
 </div>
