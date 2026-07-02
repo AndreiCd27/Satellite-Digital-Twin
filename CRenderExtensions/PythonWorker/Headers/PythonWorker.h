@@ -31,7 +31,25 @@ private:
 
         try {
             namespace fs = std::filesystem;
-            fs::path absolute_path = fs::absolute(py_script_path);
+
+            fs::path exe_path;
+#ifdef _WIN32
+            char buffer[MAX_PATH];
+            GetModuleFileNameA(NULL, buffer, MAX_PATH);
+            exe_path = fs::path(buffer);
+#elif __linux__
+            exe_path = fs::read_symlink("/proc/self/exe");
+#else
+            exe_path = fs::current_path();
+#endif
+
+            fs::path base_dir = exe_path.parent_path();
+            fs::path absolute_path = fs::absolute(base_dir / py_script_path);
+
+            if (!fs::exists(absolute_path)) {
+                absolute_path = fs::absolute(py_script_path);
+            }
+
             std::string script_dir = absolute_path.parent_path().generic_string();
             std::string build_dir = absolute_path.parent_path().parent_path().generic_string();
 

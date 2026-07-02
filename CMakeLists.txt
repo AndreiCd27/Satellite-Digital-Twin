@@ -146,7 +146,7 @@ set(HEADER_FILES
 
 #           SOURCE FILES
 
-add_executable(${PROJECT_NAME} src/Main.cpp
+set(CRENDER_SOURCE_FILES
     src/Engine3D.cpp src/Camera.cpp
     src/Scene.cpp
     src/GeometryBasics.cpp
@@ -156,15 +156,20 @@ add_executable(${PROJECT_NAME} src/Main.cpp
     
     src/Window.cpp
     src/ComputeShader.cpp
-
-    ${HEADER_FILES}
-    ${EXTENSION_HEADERS}
-    ${EXTENSION_SOURCES}
     
     src/GUI.cpp
     src/Export.cpp
     src/CommandBuffer.cpp
     src/Bindings.cpp
+)
+
+add_executable(${PROJECT_NAME} src/Main.cpp
+    
+    ${CRENDER_SOURCE_FILES}
+
+    ${HEADER_FILES}
+    ${EXTENSION_HEADERS}
+    ${EXTENSION_SOURCES}
 )
 
 
@@ -189,13 +194,7 @@ target_include_directories(py_engine3d PRIVATE
 target_link_libraries(py_engine3d PRIVATE nlohmann_json::nlohmann_json)
 
 target_sources(py_engine3d PRIVATE
-    src/CommandBuffer.cpp
-    src/Bindings.cpp
-    src/Export.cpp
-    src/GeometryBasics.cpp
-    src/Texture.cpp
-    src/Scene.cpp
-    src/Engine3D.cpp
+    ${CRENDER_SOURCE_FILES}
 )
 
 # Link Python Module
