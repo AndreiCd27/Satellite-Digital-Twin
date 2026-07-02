@@ -30,9 +30,10 @@ private:
         pybind11::gil_scoped_acquire acquire;
 
         try {
-            namespace fs = std::filesystem;
+            {
+                namespace fs = std::filesystem;
 
-            fs::path exe_path;
+                fs::path exe_path;
 #ifdef _WIN32
             char buffer[MAX_PATH];
             GetModuleFileNameA(NULL, buffer, MAX_PATH);
@@ -43,33 +44,34 @@ private:
             exe_path = fs::current_path();
 #endif
 
-            fs::path base_dir = exe_path.parent_path();
-            fs::path absolute_path = fs::absolute(base_dir / py_script_path);
+                fs::path base_dir = exe_path.parent_path();
+                fs::path absolute_path = fs::absolute(base_dir / py_script_path);
 
-            if (!fs::exists(absolute_path)) {
-                absolute_path = fs::absolute(py_script_path);
+                if (!fs::exists(absolute_path)) {
+                    absolute_path = fs::absolute(py_script_path);
+                }
+
+                std::string script_dir = absolute_path.parent_path().generic_string();
+                std::string build_dir = absolute_path.parent_path().parent_path().generic_string();
+
+                std::cout << "[ThreadLoop] Attempting to evaluate file: " << absolute_path.generic_string() << "\n";
+
+                // Get access from Python for this configuration script
+                pybind11::module_ sys = pybind11::module_::import("sys");
+                sys.attr("path").attr("insert")(0, pybind11::str(script_dir));
+                sys.attr("path").attr("insert")(0, pybind11::str(build_dir));
+                // Import the path_manage python script
+                pybind11::module_ path_manage = pybind11::module_::import("path_manage");
+                // Compute configured paths via this script
+                path_manage.attr("configure_paths")(pybind11::str(script_dir));
+
+                // Run the second thread (the python worker)
+                auto main_module = pybind11::module_::import("__main__");
+                auto global_dict = main_module.attr("__dict__");
+
+                pybind11::eval_file(absolute_path.generic_string(), global_dict);
+                std::cout << "[ThreadLoop] Script execution completed successfully.\n";
             }
-
-            std::string script_dir = absolute_path.parent_path().generic_string();
-            std::string build_dir = absolute_path.parent_path().parent_path().generic_string();
-
-            std::cout << "[ThreadLoop] Attempting to evaluate file: " << absolute_path.generic_string() << "\n";
-
-            // Get access from Python for this configuration script
-            pybind11::module_ sys = pybind11::module_::import("sys");
-            sys.attr("path").attr("insert")(0, pybind11::str(script_dir));
-            sys.attr("path").attr("insert")(0, pybind11::str(build_dir));
-            // Import the path_manage python script
-            pybind11::module_ path_manage = pybind11::module_::import("path_manage");
-            // Compute configured paths via this script
-            path_manage.attr("configure_paths")(pybind11::str(script_dir));
-
-            // Run the second thread (the python worker)
-            auto main_module = pybind11::module_::import("__main__");
-            auto global_dict = main_module.attr("__dict__");
-
-            pybind11::eval_file(absolute_path.generic_string(), global_dict);
-            std::cout << "[ThreadLoop] Script execution completed successfully.\n";
         }
         catch (const pybind11::error_already_set& e) {
             std::cerr << "\n[Python Execution Error]:\n" << e.what() << "\n";
@@ -128,23 +130,32 @@ public:
     }
 
     void Deactivate() {
-        if (!active) return;
-
-        std::cout << "[PyWorker] Shutting down secondary thread...\n";
         if (worker_thread.joinable()) {
-            worker_thread.join();
+            std::cout << "[PyWorker] Closing Python Worker Thread...\n";
+
+            int timeout_counter = 0;
+            while (active && timeout_counter < 8) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(125));
+                timeout_counter++;
+            }
+
+            if (active) {
+                std::cout << "[PyWorker Warning] Force Shutdown\n";
+                worker_thread.detach(); // Detatch Python Thread
+            }
+            else {
+                worker_thread.join(); // Clean shutdown
+                std::cout << "[PyWorker] Python Thread Closed Successfully\n";
+            }
         }
 
-        // Destroy GIL components
-        if (main_gil_release) {
-            main_gil_release.reset();
-        }
-
-        if (interpreter) {
-            interpreter.reset();
+        // Destroy GIL components and Interpreter
+        if (!active) {
+            if (main_gil_release) main_gil_release.reset();
+            if (interpreter) interpreter.reset();
         }
 
         active = false;
-        std::cout << "[PyWorker] Secondary thread deactivated\n";
     }
+
 };
