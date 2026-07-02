@@ -193,9 +193,9 @@ target_sources(py_engine3d PRIVATE
     src/Bindings.cpp
     src/Export.cpp
     src/GeometryBasics.cpp
-    src/GeometryLoader.cpp
     src/Texture.cpp
     src/Scene.cpp
+    src/Engine3D.cpp
 )
 
 # Link Python Module
