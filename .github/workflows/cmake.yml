@@ -82,6 +82,16 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Install System Dependencies for Rasterio
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdal-dev gdal-bin
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install tifffile rasterio numpy torch segmentation_models_pytorch scikit-image shapely mapbox_earcut pvlib
+
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
         run: |
