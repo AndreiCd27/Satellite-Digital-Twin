@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 project(CRender VERSION 1.0.0)
 
@@ -192,6 +193,9 @@ target_sources(py_engine3d PRIVATE
     src/Bindings.cpp
     src/Export.cpp
     src/GeometryBasics.cpp
+    src/GeometryLoader.cpp
+    src/Texture.cpp
+    src/Scene.cpp
 )
 
 # Link Python Module
@@ -210,8 +214,8 @@ target_compile_definitions(py_engine3d PRIVATE Py_GIL_USED=1)
 target_include_directories(${PROJECT_NAME} PRIVATE CRenderExtensions)
 target_include_directories(${PROJECT_NAME} PRIVATE Headers)
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include)
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/TinyTIFF)
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF)
+# target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/TinyTIFF)
+# target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/Libraries/include/TinyTIFF)
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE Libraries/include/imgui)
 
 
@@ -239,6 +243,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glad
     OpenGL::GL
     TinyTIFF
+    TinyTIFFXX
     imgui
     ${CMAKE_DL_LIBS}
     Python3::Python
