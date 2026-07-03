@@ -41,6 +41,9 @@ public:
 
     int GetWidth() const{ return width; };
     int GetHeight() const{ return height; };
+    GLenum GetType() const { return m_type; };
+    GLenum GetFormat() const { return m_format; };
+    GLint GetInternalFormat() const { return m_internalFormat; };
 
     void BindImage(unsigned int unit, unsigned int access) const;
 
@@ -54,6 +57,16 @@ public:
 	void setupFBO();
 	bool setupDepthTexture(const int SIZE);
 	GLuint GetFBO_ID() const { return FBO_ID; };
+};
+
+class FBO_Sampler {
+    GLuint FBO_ID, depthBuffer;
+    Texture* Tex = nullptr;
+public:
+    void attachTexture(Texture* _Tex);
+    void genFBO();
+    GLuint GetFBO_ID() const { return FBO_ID; };
+    Texture* GetTexPtr() const { return Tex; };
 };
 
 template <int GL_FORMAT, int GL_COLOR_CHANNELS>

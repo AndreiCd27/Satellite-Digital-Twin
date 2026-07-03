@@ -7,6 +7,7 @@
 #include "PythonWorker.h"
 #include "Bindings.h"
 #include "Export.h"
+#include "Select.h"
 #include "GUI.h"
 
 #include <cstdlib>
@@ -174,6 +175,8 @@ int main() {
     SHLM shlm(engine, engine->getCFG(),
         AVector3(2048, 128, 2048), AVector3(-imgSize, -128.0f, -imgSize), AVector3(imgSize, 128.0f, imgSize));
 
+    WorldBBox bbox{ AVector3(-imgSize, -128.0f, -imgSize), AVector3(imgSize, 128.0f, imgSize) };
+
     //////////////////////////////
 
     engine->SetupFull("static");
@@ -199,6 +202,11 @@ int main() {
     GeoData GEO_DATA;
     GeoExporter GeoExporterService{ &GEO_DATA };
 
+    // Selecter
+
+    FBO_Sampler fbosampler; fbosampler.genFBO();
+    TexturePxSelecter tex_px_selecter(&fbosampler);
+
     while (!engine->windowShouldClose()) {
 
         if (CI_GITHUB_TIMEOUT()) break;
@@ -217,7 +225,7 @@ int main() {
                     CommandBuffer::ProcessPyPixelCommands();
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
-
+                std::cout << "final pixel process command\n";
                 CommandBuffer::ProcessPyPixelCommands();
                 glFinish();
             }
@@ -231,7 +239,6 @@ int main() {
                 init_global_sys = true;
             }
         }
-
         engine->initGameFrame();
         // GAME-LOOP CODE HERE
         
@@ -261,6 +268,20 @@ int main() {
             glfwGetKey(engine->GetWindow()->getWindow(), GLFW_KEY_V) == GLFW_PRESS) {
             // Debug All Textures
             DebugAllTex(engine);
+        }
+        if (__PROCESS_PX_HALT_REQUEST == true &&  
+            glfwGetMouseButton(engine->GetWindow()->getWindow(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+            // Selecter for heightmap (WORK IN PROGRESS)
+            fbosampler.attachTexture(CommandBuffer::GetTexSlot("u_heights").get());
+            double mouseX, mouseY;
+            Window* _window = engine->GetWindow();
+            Camera& _cam = engine->getCamera(false);
+            glfwGetCursorPos(_window->getWindow(), &mouseX, &mouseY);
+            int pixelX = static_cast<int>(mouseX);
+            int pixelY = static_cast<int>(mouseY);
+            float pixelData[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            tex_px_selecter.Select(_window, &_cam, &bbox, pixelX, pixelY, true, pixelData);
+            //std::cout <<"[SELECTER] HEIGHT DATA: " << pixelData[0] << " " << pixelData[1] << "\n";
         }
         
     }

@@ -115,6 +115,7 @@ set(HEADER_FILES
     
     Headers/GeometryBasics.h
     Headers/Texture.h
+    Headers/Select.h
     
     Headers/VBO.h
     Headers/EBO.h
@@ -142,6 +143,7 @@ set(CRENDER_SOURCE_FILES
     src/Scene.cpp
     src/GeometryBasics.cpp
     src/Texture.cpp
+    src/Select.cpp
     src/VBO.cpp src/EBO.cpp src/VAO.cpp
     src/shaderClass.cpp
     

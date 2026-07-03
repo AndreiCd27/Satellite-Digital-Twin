@@ -161,3 +161,27 @@ bool ShadowSampler::setupDepthTexture(const int SIZE) {
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) return false;
 	return true;
 }
+
+
+void FBO_Sampler::attachTexture(Texture* _Tex) {
+	Tex = _Tex;
+
+	// Save previous active FBO
+	GLint previousFBO;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFBO);
+	// Bind this FBO
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO_ID);
+
+	// Attach Texture
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, Tex->GetTexID(), 0);
+	// Revert to previous FBO to preserve OpenGL state
+	glBindFramebuffer(GL_FRAMEBUFFER, previousFBO);
+}
+
+void FBO_Sampler::genFBO() {
+
+	glGenFramebuffers(1, &FBO_ID);
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO_ID);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}

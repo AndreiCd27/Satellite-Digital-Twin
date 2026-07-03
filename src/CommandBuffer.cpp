@@ -49,7 +49,7 @@ void CommandBuffer::ProcessPyDataCommands() {
 
     while (auto cmd = PyDataLoad.TryPop()) {
 
-        std::cout << "[RENDER] PROCESSED DATA STORE COMMAND FROM PYTHON\n";
+        std::cout << "[RENDER] PROCESSED DATA STORE COMMAND FROM PYTHON\n"; /*
         // PushGeometry sets UpdateBuffers = true automatically
         if (cmd->dataType == "TMY") {
 
@@ -90,7 +90,7 @@ void CommandBuffer::ProcessPyDataCommands() {
                 Engine3D::tmy_data.sun_y.push_back(sy);
                 Engine3D::tmy_data.sun_z.push_back(sz);
             }
-        }
+        }*/
     };
 }
 GeoData CommandBuffer::ProcessPyGeoDataCommands() {
