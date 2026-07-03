@@ -3,6 +3,7 @@
 ###############################################################################
 * text=auto
 Libraries/** linguist-vendored
+src/glad.c linguist-vendored
 ###############################################################################
 # Set default behavior for command prompt diff.
 #
