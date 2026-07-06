@@ -9,6 +9,8 @@ import numpy as np
 #from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
 
+from load_gis_geom import extract_3d_buildings
+
 from py_engine3d import set_geometry
 from py_engine3d import should_run
 from py_engine3d import should_halt
@@ -272,6 +274,16 @@ def process_and_triangulate_image(image_path):
         set_geometry(global_vertices, global_indices)
     else:
         print("\n[RENDERING] No buildings detected")
+
+    # Test out GIS geometry
+    #gis_vertices, gis_indices = extract_3d_buildings(lat_lon_bounds[2], lat_lon_bounds[0], lat_lon_bounds[3], lat_lon_bounds[1], 0.0)
+    #
+    #if gis_vertices:
+    #    print(f"\n[RENDERING] {len(gis_vertices) // 3} vertices, {len(global_indices) // 3} triangles")
+    #    set_geometry(gis_vertices, gis_indices)
+    #else:
+    #    print("\n[RENDERING] No buildings detected")
+
     # Send building mask to rendering pipeline as a GL_TEXTURE
     print("[GIS] Sending global textures from Python to GPU...")
     push_texture_pixels(image, "satellite")
