@@ -1,19 +1,25 @@
 import osmnx as ox
 import numpy as np
 from pyproj import Transformer
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon
+
+import rasterio
+from rasterio.features import rasterize
+from affine import Affine
 
 import py_engine3d  # C++ CRender Module
 from py_engine3d import AVertex
 
-def extract_3d_buildings(north, south, east, west, avg_height=0.0):
+def get_osm_gdf(north, south, east, west):
     try:
-        # Download OSM buildings
+        # Download OSM buildings as GeoDataFrame
         gdf = ox.features_from_bbox((north, south, east, west), tags={'building': True})
+        return gdf
     except Exception as e:
         print(f"[GIS] Error downloading: {e}")
-        return [], []
+        return []
 
+def rectify_heights(gdf):
     if 'height' in gdf.columns:
         # Convert NaN to 0
         gdf['height'] = gdf['height'].fillna('0').astype(str)
@@ -25,12 +31,49 @@ def extract_3d_buildings(north, south, east, west, avg_height=0.0):
     else:
         gdf['building:levels'] = '0'
 
+
+def b_height(row):
+    if 'height' in row and str(row['height']) != 'nan':
+        val = row['height']
+        if isinstance(val, (list, np.ndarray)):
+            val = str(val[0])
+        else:
+            val = str(val)
+            
+        val = val.replace('m', '').strip()
+        try: 
+            return float(val)
+        except (ValueError, TypeError): 
+            pass
+
+    if 'building:levels' in row and str(row['building:levels']) != 'nan':
+        val_lvl = row['building:levels']
+        if isinstance(val_lvl, (list, np.ndarray)):
+            val_lvl = val_lvl[0]
+        try: 
+            scalar_lvl = float(np.asarray(val_lvl).item())
+            return scalar_lvl * 3.0
+        except (ValueError, TypeError): 
+            pass
+
+    return 0.0
+
+def UTM_proj(gdf):
     try:
         # UTM Projection to meter scale
         gdf_projected = ox.projection.project_gdf(gdf)
+        return gdf_projected
     except Exception as e:
         print(f"[GIS] Error during projection (UTM conversion): {e}")
-        return [], []
+        return []
+
+def extract_3d_buildings(north, south, east, west, avg_height=0.0):
+    
+    gdf = get_osm_gdf(north, south, east, west)
+
+    rectify_heights(gdf)
+
+    gdf_projected = UTM_proj(gdf)
     
     # Local center
     centroid = gdf_projected.unary_union.centroid
@@ -43,13 +86,7 @@ def extract_3d_buildings(north, south, east, west, avg_height=0.0):
     id_poly = 65536
 
     for idx, row in gdf_projected.iterrows():
-        height = 3.0
-        if 'height' in row and not np.isnan(float(row['height']) if isinstance(row['height'], (int, float)) else 0):
-            try: height = float(row['height'])
-            except: pass
-        elif 'building:levels' in row and not np.isnan(float(row['building:levels']) if isinstance(row['building:levels'], (int, float)) else 0):
-            try: height = float(row['building:levels']) * 3.0
-            except: pass
+        height = b_height(row)
 
         # Process Polygon Geometry
         if isinstance(row['geometry'], Polygon) and not row['geometry'].is_empty:
@@ -93,3 +130,40 @@ def extract_3d_buildings(north, south, east, west, avg_height=0.0):
 
     print("[GIS] Sending vertices from OverpassAPI to Main Python Script")
     return global_vertices, global_indices
+
+
+def extract_building_height_raster(north, south, east, west, px_res=1.0, avg_height=0.0):
+    
+    gdf = get_osm_gdf(north, south, east, west)
+
+    rectify_heights(gdf)
+
+    gdf_projected = UTM_proj(gdf)
+
+    bounds = gdf_projected.total_bounds
+    minx, miny, maxx, maxy = bounds
+    
+    width = int(np.ceil((maxx - minx) / px_res))
+    height = int(np.ceil((maxy - miny) / px_res))
+
+    Atransform = Affine(px_res, 0.0, minx, 0.0, -px_res, maxy)
+    shapes = []
+
+    for idx, row in gdf_projected.iterrows():
+        BuildingH = b_height(row)
+        geom = row.geometry
+        if isinstance(geom, (Polygon, MultiPolygon)):
+            if geom.is_valid:
+                shapes.append((geom, BuildingH))
+    if not shapes:
+        print("[GIS] Error: Building footprints not found for region given")
+        print(f"[GIS] Error Region - N:{north}, S:{south}, E:{east}, W{west}")
+        return None, None
+
+
+    heightmap = rasterize(shapes=shapes, out_shape=(height, width), transform=Atransform,
+        fill=0.0, all_touched=True, dtype=np.float32
+    )
+
+    # 2D Heightmap Texture
+    return heightmap

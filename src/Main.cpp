@@ -53,7 +53,7 @@ std::string GetDebugTexKey(int tt) {
     if (tt == 9) key = "Vis1";
     if (tt == 10) key = "Vis2";
     if (tt == 11) key = "Vis3";
-    if (tt == 12) key = "sum_irradiance_out";
+    if (tt == 12) key = "osm_heights";
 
     if (tt == 7) { Engine3D::DEBUG_TEXTURE_SCALAR = 1.0f / 60.0f; }
     else { Engine3D::DEBUG_TEXTURE_SCALAR = 1.0f; }

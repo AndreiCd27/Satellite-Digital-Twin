@@ -10,6 +10,7 @@ import numpy as np
 import segmentation_models_pytorch as smp
 
 from load_gis_geom import extract_3d_buildings
+from load_gis_geom import extract_building_height_raster
 
 from py_engine3d import set_geometry
 from py_engine3d import should_run
@@ -283,6 +284,17 @@ def process_and_triangulate_image(image_path):
     #    set_geometry(gis_vertices, gis_indices)
     #else:
     #    print("\n[RENDERING] No buildings detected")
+    print("[GIS] Extracting Building Heights from OSM...")
+    height_raster_osmnx = extract_building_height_raster(
+        lat_lon_bounds[2], lat_lon_bounds[0], 
+        lat_lon_bounds[3], lat_lon_bounds[1], px_res[0], 0.0
+    )
+    print("[GIS] Extracting Building Heights from OSM (SUCCESS)")
+    if height_raster_osmnx is not None:
+        if len(height_raster_osmnx.shape) == 2:
+            height_raster_osmnx = np.expand_dims(height_raster_osmnx, axis=-1)
+        height_raster_osmnx = height_raster_osmnx.astype(np.float32).copy(order="C")
+        push_texture_pixels(height_raster_osmnx, "osm_heights")
 
     # Send building mask to rendering pipeline as a GL_TEXTURE
     print("[GIS] Sending global textures from Python to GPU...")

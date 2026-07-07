@@ -78,6 +78,7 @@ void SatelliteAnalyzer::InitTextures() {
     diff_shadow_mask->MinMagFilter(GL_LINEAR, GL_LINEAR);
     diff_shadow_mask->WrapFilter(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
     diff_shadow_mask->CreateTex2D(GL_RG8, GL_RG, GL_UNSIGNED_BYTE, nullptr);
+
 }
 
 int SatelliteAnalyzer::FindOptimalAzimuth(float startAngle, float endAngle, 
@@ -568,7 +569,7 @@ void SatelliteAnalyzer::AnalyzeFromQueue() {
     float optimal_elevation = 0.785f;
     float min_IoU_loss = 1.0f;
 
-    std::pair<float,int> params[] = {{0.25f, 120}, {0.275f, 120}, {0.3f, 120}};
+    std::pair<float,int> params[] = {{0.2f, 120}, {0.225f, 120}, {0.25f, 120}};
 
     for (auto& param : params) {
         GenerateMasks(optimal_azimuth, param.first, param.second);

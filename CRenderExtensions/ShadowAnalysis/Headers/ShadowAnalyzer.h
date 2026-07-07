@@ -51,6 +51,9 @@ class SatelliteAnalyzer {
     // Final irradiance summation over time
     Texture* sum_irradiance = nullptr;
 
+    // OpenStreetMap Building Height Raster Data
+    Texture* osm_heights = nullptr;
+
     Shader visualizeShader;
 
     GLuint ssboAngleScores = 0;
